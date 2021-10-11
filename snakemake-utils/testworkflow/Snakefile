@@ -1,0 +1,36 @@
+rule all:
+	input:
+		"results/env.txt",
+	resources:
+		walltime = "00:00:30",
+		mem_mb = "1000",
+		cpus = 1,
+		gpus = 0
+
+rule env:
+	output:
+		"results/env.txt"
+	resources:
+		walltime = "00:00:29",
+		mem_mb = "1000",
+		cpus = 1,
+		gpus = 0
+	shell:
+		"""
+		env > results/env.txt
+		"""
+
+rule singularity_env:
+	output:
+		"results/singularity_env.txt"
+	resources:
+		walltime = "00:10:28",
+		mem_mb = "1000",
+		cpus = 1,
+		gpus = 0
+	envmodules:
+		"Singularity/3.7.1"
+	shell:
+		"""
+		env > results/env.txt
+		"""

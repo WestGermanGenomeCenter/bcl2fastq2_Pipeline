@@ -1,0 +1,107 @@
+# Execute snakemake rules with the given submit command,
+# e.g. qsub. Snakemake compiles jobs into scripts that
+# are submitted to the cluster with the given command,
+# once all input files for a particular job are present.
+# The submit command can be decorated to make it aware
+# of certain job properties (name, rulename, input,
+# output, params, wildcards, log, threads and
+# dependencies (see the argument below)), e.g.: $
+# snakemake --cluster 'qsub -pe threaded {threads}'.
+cluster: "pbs-submit.py -e clusterLogs/{rule}.{jobid}.errors -o clusterLogs/{rule}.{jobid}.output -A {resources.project} -l select=1:ncpus={resources.cpus}:ngpus={resources.gpus}:mem={resources.mem_mb}M -l walltime={resources.walltime}"
+
+# Status command for cluster execution. This is only
+# considered in combination with the --cluster flag. If
+# provided, Snakemake will use the status command to
+# determine if a job has finished successfully or
+# failed. For this it is necessary that the submit
+# command provided to --cluster returns the cluster job
+# id. Then, the status command will be invoked with the
+# job id. Snakemake expects it to return 'success' if
+# the job was successfull, 'failed' if the job failed
+# and 'running' if the job still runs.
+cluster-status: "statuscommand.py"
+
+# A JSON or YAML file that defines the wildcards used in
+# 'cluster' for specific rules, instead of having them
+# specified in the Snakefile. For example, for rule
+# 'job' you may define: { 'job' : { 'time' : '24:00:00'
+# } } to specify the time for rule 'job'. You can
+# specify more than one file. The configuration files
+# are merged with later values overriding earlier ones.
+# This option is deprecated in favor of using --profile,
+# see docs.
+#cluster-config: cluster.json
+
+# Provide a custom job script for submission to the
+# cluster. The default script resides as 'jobscript.sh'
+# in the installation directory.
+jobscript: "pbs-jobscript.sh"
+
+# Use at most N CPU cores/jobs in parallel. If N is
+# omitted or 'all', the limit is set to the number of
+# available CPU cores.
+jobs: 10
+
+# In cluster mode, use at most N cores of the host
+# machine in parallel (default: number of CPU cores of
+# the host). The cores are used to execute local rules.
+# This option is ignored when not in cluster mode.
+local-cores: 1
+
+# Maximal number of cluster/drmaa jobs per second,
+# default is 10, fractions allowed.
+max-jobs-per-second: 1
+
+# Immediately submit all jobs to the cluster instead of
+# waiting for present input files. This will fail,
+# unless you make the cluster aware of job dependencies,
+# e.g. via: $ snakemake --cluster 'sbatch --dependency
+# {dependencies}. Assuming that your submit script (here
+# sbatch) outputs the generated job id to the first
+# stdout line, {dependencies} will be filled with space
+# separated job ids this job depends on.
+immediate-submit: false
+
+# Print debugging output.
+verbose: false
+
+# Print the reason for each executed rule.
+reason: true
+
+# Wait given seconds if an output file of a job is not
+# present after the job finished. This helps if your
+# filesystem suffers from latency.
+latency-wait: 60
+
+# Go on with independent jobs if a job fails.
+keep-going: false
+
+# Do not remove incomplete output files by failed jobs.
+keep-incomplete: true
+
+# If defined in the rule, run job within a singularity
+# container. If this flag is not set, the singularity
+# directive is ignored.
+use-singularity: true
+
+# Specify a directory in which singularity images will
+# be stored.If not supplied, the value is set to the
+# '.snakemake' directory relative to the invocation
+# directory. If supplied, the `--use-singularity` flag
+# must also be set. The value may be given as a relative
+# path, which will be extrapolated to the invocation
+# directory, or as an absolute path.
+singularity-prefix: "/tmp/.singularity/"
+
+# Maximal number of job status checks per second,
+# default is 10, fractions allowed.
+max-status-checks-per-second: 10
+
+# Number of times to restart failing jobs.
+restart-times: 0
+
+# Re-run all jobs the output of which is recognized as incomplete.
+rerun-incomplete: true
+
+# Environment variables to pass to cloud jobs.
+envvars: "SINGULARITY_CACHEDIR"

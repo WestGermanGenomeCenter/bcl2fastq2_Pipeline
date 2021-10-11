@@ -1,0 +1,33 @@
+{
+    "__default__" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "0:59:59",
+      "mem" : "700MB",
+      "error" : "clusterLogs/{rule}.{jobid}.errors",
+      "output" : "clusterLogs/{rule}.{jobid}.output"
+    },
+    "multiqc" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "0:59:59",
+      "mem" : "700MB",
+      "error" : "clusterLogs/multiqc.{jobid}.errors",
+      "output" : "clusterLogs/multiqc.{jobid}.output"
+    },
+
+    "bcl2fastq2" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "1:59:59",
+      "mem" : "10GB",
+      "error" : "clusterLogs/{jobid}.errors",
+      "output" : "clusterLogs/{jobid}.output"
+    }
+}
