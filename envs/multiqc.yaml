@@ -1,4 +1,4 @@
-name: rseqc
+name: multiqc
 channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/bioconda
@@ -6,5 +6,4 @@ channels:
   - http://conda.repo.test.hhu.de/conda-forge
  
 dependencies:
-  - rseqc=4.0.0=py37h73a75cf_1
-  - libiconv=1.15
+  - multiqc=1.11

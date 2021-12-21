@@ -17,21 +17,26 @@ bcl2fastq:
       type: integer
     bcl2fastq2_version:
       type: string
-    MultiQC_version:
-      type: string
-    FastQC_version:
-      type: string
-    fastQC_threads:
-      type: integer
   required:
     - barcode_mismatch
     - SampleSheet
     - OutputFolder
     - threads
     - bcl2fastq2_version
-    - MultiQC_version
+
+others:
+  type: object
+  properties:
+    FastQC_version:
+      type: string
+    fastQC_threads:
+      type: integer
+    SHA256_threads:
+      type: integer
+  required:
     - FastQC_version
     - fastQC_threads
+    - SHA256_threads
 
 gocryptfs:
   type: object
@@ -51,6 +56,8 @@ cutadapt:
       type: string
     cutadapt_active:
       type: boolean
+    cutadapt_threads:
+      type: integer
     adapters:
       type: object
     adapter_type:
@@ -60,3 +67,29 @@ cutadapt:
   required:
     - cutadapt_version
     - cutadapt_active
+    - cutadapt_threads
+
+rseqc:
+  type: object
+  properties:
+    rseqc_active:
+      type: boolean
+    gtf_file:
+      type: string
+    genomeDir: 
+      type: string
+    strandedness:
+      type: string
+    STAR_threads: 
+      type: integer
+    other_params: 
+      type: string
+    STAR_version: 
+      type: string
+  required:
+    - rseqc_active
+    - gtf_file
+    - genomeDir
+    - strandedness
+    - STAR_threads
+    - STAR_version

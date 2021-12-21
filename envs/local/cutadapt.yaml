@@ -1,0 +1,7 @@
+name: cutadapt
+channels:
+  - defaults
+  - conda-forge
+ 
+dependencies:
+  - cutadapt=3.5

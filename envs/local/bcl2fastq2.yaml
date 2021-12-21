@@ -1,0 +1,9 @@
+name: bcl2fastq2
+channels:
+  - defaults
+  - bih-cubi
+ 
+dependencies:
+  - libgcc=7.2.0=h69d50b8_2
+  - zlib=1.2.11=h7b6447c_3
+  - bcl2fastq2=2.20.0.422

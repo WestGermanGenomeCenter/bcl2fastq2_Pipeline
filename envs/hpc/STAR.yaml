@@ -1,0 +1,7 @@
+name: STAR
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/bioconda
+ 
+dependencies:
+  - star=2.7.9a=h9ee0642_0

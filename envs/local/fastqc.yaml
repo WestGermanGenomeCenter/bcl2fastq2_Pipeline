@@ -1,0 +1,10 @@
+name: fastqc
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+
+ 
+dependencies:
+  - perl=5.26.2
+  - fastqc=0.11.5

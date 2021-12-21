@@ -4,9 +4,8 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.getcwd())+"/scripts")
 from helper import validateSamplesheet, validateOutput, validateProjectNum, adaptersToStringParams
-import os
 import pandas as pd
-
+p = os.path.abspath(".")
 
 # Snakemake configs and setup
 min_version("6.4.0")
@@ -16,7 +15,12 @@ validate(config, schema="../schemas/config.schema.yaml")
 samplesheet = config["bcl2fastq"]["SampleSheet"]
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 
+### include rules ###
+
+include: "qc.smk"
+
 # Get the fastq.gz samples
+sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
     fastqs = list(samples_dataframe.iloc[:, 0].values)
@@ -47,8 +51,10 @@ def getOutput():
     else:
         all.extend(expand("{out}/{name}.fastq.gz",out=outputfolder,name=sample_names))
         all.extend(expand("{out}/multiqc_report_{prj}.html",out=outputfolder,prj=projectNum))
-        all.extend(expand("{out}/allFastQs_from_{prj}.checksums.sha256",out=outputfolder,prj=projectNum))    
+        all.extend(expand("{out}/allFastQs_from_{prj}.checksums.sha256",out=outputfolder,prj=projectNum))
 
+    if config["rseqc"]["rseqc_active"]:
+        all.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder))
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -60,63 +66,110 @@ def getSHA256(wildcards):
     sha256s.extend(expand("{out}/sha256/{name}.checksums.sha256",out=outputfolder,name=sample_names))
     return sha256s
 
-
 def getFastQCs(wildcards):
     fastQCs = list()
     fastQCs.extend(expand("{out}/fastqc/{name}_fastqc.{ext}",out=outputfolder,name=sample_names,ext=["html","zip"]))
     if config["cutadapt"]["cutadapt_active"]:
-        fastQCs.extend(expand("{out}/fastqc_untrimmed/{name}_untrimmed_fastqc.{ext}",out=outputfolder,name=sample_names,ext=["html","zip"]))
+        for sample in sample_names:
+            relativePath = os.path.dirname(sample)+"/" if "/" in sample else ""
+            fastQCs.extend(expand("{out}/fastqc_untrimmed/{path}untrimmed_{file}_fastqc.{ext}",out=outputfolder,path=relativePath,file=os.path.split(sample)[-1],ext=["html","zip"]))
+    if config["rseqc"]["rseqc_active"]:
+        for sample in sample_names:
+            fastQCs.extend(expand("{out}/star/{file}/Aligned.sortedByCoord.out.bam",out=outputfolder,file=sample.split("/")[-1].split("_R")[0]))
+            fastQCs.extend(expand("{out}/star/{file}/ReadsPerGene.out.tab",out=outputfolder,file=sample.split("/")[-1].split("_R")[0]))
     return fastQCs
 
+def isSingleEnd() -> bool:
+    """
+    Returns wether the fastqs are single-end=True or paired-end=False
+    """
+    R1 = list()
+    R2 = list()
+    for sample in sample_names:
+        if sample.split("_R")[1].startswith("1"):
+            R1.append(sample)
+        else:
+            R2.append(sample)
+    if len(R1)!=len(R2):
+        return True
+    return False
+
+
+
+def getSamples(wildcards):
+    if isSingleEnd():
+        for sample in sample_names:
+            if str(wildcards) in sample:
+                return expand("{out}/{file}.fastq.gz",out=outputfolder,file=sample)
+    sampleName = str(wildcards).split("_R")[0]
+    R1and2 = list()
+    for sample in sample_names:
+        trySplit = sample.split(os.sep)[-1]
+        if trySplit:
+            if trySplit.startswith(sampleName):
+                R1and2.append(sample)
+    return expand("{out}/{file}.fastq.gz",out=outputfolder,file=R1and2)
 
 def getPath(wildcards):
     """
     Returns the path in the samplename wildcard in case there is a path.
     Whether there is a path depends on the samplesheet+bcl2fastq2
     """
-    file = "{name}".format(name=wildcards["name"])
+    if len(set(wildcards))>1:
+        file = "{path}".format(path=wildcards["path"])
+    else:
+        file = "{name}".format(name=wildcards["name"])
     if "/" not in file:
         return ""
     file_split = file.split('/')[:-1]
     path = '/'.join(file_split)
     return path[1:] if path.startswith('/') else path
 
+def getFastqs(wildcards):
+    samples = getSamples(wildcards)
+    if len(samples)>1:
+        return " ".join(samples)
+    return samples
+
 # local rules
 localrules: all, mergeSHA256, gocryptfs
 
 
-
 rule all:
     input:
-        getOutput()
-
+        getOutput() if projectNum else ""
 
 # conditional rule if cutadapt is set to True
 if config["cutadapt"]["cutadapt_active"]:
     rule FastQC_untrimmed:
         input:
-            samples = outputfolder+"/{name}.fastq.gz"
+            samples = outputfolder+"/{path}{file}.fastq.gz"
         params:
-            fastQC=config["bcl2fastq"]["FastQC_version"],
+            fastQC=config["others"]["FastQC_version"],
             path=getPath,
-            html = outputfolder+"/fastqc_untrimmed/{name}_fastqc.html",
-            zip = outputfolder+"/fastqc_untrimmed/{name}_fastqc.zip",
+            html = outputfolder+"/fastqc_untrimmed/{path}{file}_fastqc.html",
+            zip = outputfolder+"/fastqc_untrimmed/{path}{file}_fastqc.zip",
             out=outputfolder
         output:
-            zip = expand("{out}/fastqc_untrimmed/{{name}}_untrimmed_fastqc.zip", out=outputfolder),
-            html = expand("{out}/fastqc_untrimmed/{{name}}_untrimmed_fastqc.html", out=outputfolder)
-        threads: 1
+            zip = expand("{out}/fastqc_untrimmed/{{path}}untrimmed_{{file}}_fastqc.zip", out=outputfolder),
+            html = expand("{out}/fastqc_untrimmed/{{path}}untrimmed_{{file}}_fastqc.html", out=outputfolder)
+        threads: config["others"]["fastQC_threads"]
+        log:
+            outputfolder+"/logs/fastqc/untrimmedFastQC_{path}{file}.log"
+        conda:
+            p+"/envs/fastqc.yaml"
         message:
             "Run untrimmed FastQC"
         shell:
             """
             mkdir -p {params.out}/fastqc_untrimmed/{params.path}
-            chmod ago+rwx -R {params.out}
-            {params.fastQC} -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/{params.path}
-            mv {params.zip} {output.zip} 
+            chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+            unset command_not_found_handle
+            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/{params.path} > {log} 2>&1
+            mv {params.zip} {output.zip}
             mv {params.html} {output.html}
             """
-           
+
 
     rule cutadapt:
         input:
@@ -128,35 +181,68 @@ if config["cutadapt"]["cutadapt_active"]:
             out=outputfolder
         output:
             expand("{out}/trimmed/{{name}}.fastq.gz", out=outputfolder)
-        threads: 1
+        threads: config["cutadapt"]["cutadapt_threads"]
+        log:
+            outputfolder+"/logs/cutadapt/trimmed_{name}.log"
         message:
             "Run cutadapt"
-        envmodules:
-            config["cutadapt"]["cutadapt_version"]
+        conda:
+            p+"/envs/cutadapt.yaml"
         shell:
             """
             mkdir -p {params.out}/trimmed; mkdir -p {params.out}/trimmed/report; mkdir -p {params.out}/trimmed/report/{params.path}
-            cutadapt {params.adapters} {params.otherParams} -o {output} {input} > {params.out}/trimmed/report/{wildcards.name}.txt
+            cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
             """
+
+if config["rseqc"]["rseqc_active"]:
+    rule align:
+        input:
+            fastqs=getSamples 
+        output:
+            # see STAR manual for additional output files
+            expand("{out}/star/{{file}}/Aligned.sortedByCoord.out.bam",out=outputfolder),
+            expand("{out}/star/{{file}}/ReadsPerGene.out.tab",out=outputfolder)
+        wildcard_constraints:
+            file="(.*(?:_).*)"
+        log:
+            outputfolder+"/logs/star/{file}.log"
+        params:
+            # optional parameters
+            extra="--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --sjdbGTFfile {} {}".format(
+                  config["rseqc"]["gtf_file"], config["rseqc"]["other_params"]),
+            outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/")+"/",
+            genDir = config["rseqc"]["genomeDir"],
+            fastqs=lambda w: getFastqs(w.file)
+        threads: config["rseqc"]["STAR_threads"]
+        conda:
+            p+"/envs/STAR.yaml"
+        envmodules:
+            config["rseqc"]["STAR_version"]
+        shell:
+            "STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.outp} --outStd Log {log}"
 
 
 rule FastQC:
     input:
         samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
     params:
-        fastQC=config["bcl2fastq"]["FastQC_version"],
+        fastQC=config["others"]["FastQC_version"],
         path=getPath,
         out=outputfolder
     output:
         expand("{out}/fastqc/{{name}}_fastqc.{ext}", out=outputfolder, ext=["html","zip"])
-    threads: 1
+    threads: config["others"]["fastQC_threads"]
+    log:
+        outputfolder+"/logs/fastqc/FastQC_{name}.log"
+    conda:
+        p+"/envs/fastqc.yaml"
     message:
         "Run FastQC"
     shell:
         """
         mkdir -p {params.out}/fastqc/{params.path}
-        chmod ago+rwx -R {params.out}
-        {params.fastQC} -q --threads {threads} {input} -o {params.out}/fastqc/{params.path}
+        chmod ago+rwx -R {params.out}/fastqc/ || :
+        fastqc -q --threads {threads} {input} -o {params.out}/fastqc/{params.path} > {log} 2>&1
         """
 
 
@@ -165,7 +251,7 @@ rule SHA256:
         samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
     output:
         expand("{out}/sha256/{{name}}.checksums.{ext}", out=outputfolder, ext=["sha256"])
-    threads: 1
+    threads: config["others"]["SHA256_threads"]
     message:
         "Run SHA256"
     shell:
@@ -197,15 +283,17 @@ rule multiqc:
     params:
         output=outputfolder
     group: "multiqc"
+    log:
+        outputfolder+"/logs/MultiQC.log"
     message:
         "Run MultiQC"
-    envmodules:
-        config["bcl2fastq"]["MultiQC_version"]
+    conda:
+        p+"/envs/multiqc.yaml"
     shell:
         """
-        chmod ago+rwx -R {params.output}
-        multiqc --filename {output} -q -d --ignore-samples Undetermined* -x Undetermined* -m 'fastqc' {params.output} -m 'cutadapt' {params.output} -o {params.output}
-        chmod ago+rwx -R {params.output}
+        chmod ago+rwx -R {params.output} || :
+        multiqc --filename {output} --fn_as_s_name -q --ignore-samples Undetermined* -x Undetermined* -m "star" {params.output} -m 'rseqc' {params.output} -m 'fastqc' {params.output} -m 'cutadapt' {params.output} -o {params.output} > {log} 2>&1
+        chmod ago+rwx -R {params.output} || :
         """
 
 
@@ -217,6 +305,10 @@ rule gocryptfs:
         "{out}/encrypted/gocryptfs.conf".format(out=outputfolder)
     params:
         output=outputfolder
+    log:
+        outputfolder+"/logs/gocryptfs.log"
+    conda:
+        p+"/envs/gocryptfs.yaml"
     message: "Run Gocryptfs"
     envmodules:
         config["gocryptfs"]["gocryptfs_version"]
@@ -225,7 +317,8 @@ rule gocryptfs:
         mkdir -p {params.output}/encrypted/
         gocryptfs -init {params.output}/encrypted/
         mkdir -p {params.output}/plain/
-        gocryptfs {params.output}/encrypted/ {params.output}/plain/
+        echo 'Password:'
+        gocryptfs {params.output}/encrypted/ {params.output}/plain/ > {log} 2>&1
         rsync -av --progress {params.output}/* {params.output}/plain/ --exclude encrypted/ --exclude plain/ --remove-source-files
         fusermount -u {params.output}/plain/
         rm -r {params.output}/plain/

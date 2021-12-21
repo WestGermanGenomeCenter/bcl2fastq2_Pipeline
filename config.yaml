@@ -1,46 +1,43 @@
-# Um die Pipeline zu starten, folgende Schritte:
-# config.yaml anpassen
-# ./runPipeline.sh ausführen
+# Anleitung: https://wiki.hhu.de/display/BMFZIT/bcl2fastq2+Pipeline+-+Benutzeranleitung
 
 bcl2fastq:
-  # barcode missmatches, bitte eine Zahl >= 0 angeben
   barcode_mismatch: 1
-  # Samplesheet im jeweiligen Ordner(mit folgender Syntax {YYMMDD}_{InstrumentID}_{RunID}_{FlowcellID}
-  # Es kann zu Fehlern kommen wenn keine Read-Rechte für die angegebenen Dateien vorhanden sind
-  # Die Ordner und Samplesheets sind 1:1, also z.B. erster Input zu erstem Output (bitte auf gleiche Anzahl achten)
-  # Falls es zu dem Fall kommen sollte das zweimal das gleiche SampleSheet angegeben wird, wird nur der letzte Outputordner beschrieben
-  # Lösungen: SampleSheet kopieren und einmal umbennen oder die Pipeline zweimal starten und die config.yaml anpassen
   SampleSheet:
-   /path/to/samplesheet
+   /path/to/SampleSheet.csv
   OutputFolder:
-   /path/to/output
-  # Es ist möglich weitere Optionen für bcl2fastq2 Version 2.20.0 mit folgender Syntax anzugeben
-  # option [parameter] another_option [parameter] ....
-  # Ein Beispiel für die Syntax-> options: "--ignore-missing-bcls --adapter-stringency 1 --tiles[09][09][09]5 --ignore-missing-positions"
+   /path/to/OutputFolder
   options: ""
-  # Die Anzahl der Threads mit der bcl2fastq2 laufen soll. Wenn der Wert hier geändert wird, sollte dies in cluster.json unter ppn value, angepasst werden, da sonst mehr Threads laufen sollen als angefragt wurden, was wiederum zu Problemen führen kann
-  threads: 12      # 12 ist die empfohlene Anzahl von Illumina für bcl2fastq2
+  threads: 12      
   bcl2fastq2_version: bcl2fastq/2.20.0
-  MultiQC_version: MultiQC # Version am besten >=1.7(derzeitige Clusterversion)
+
+others:
   FastQC_version: /software/fastqc/0.11.4/fastqc
   fastQC_threads: 1
+  SHA256_threads: 1
 
 gocryptfs:
   gocryptfs_version: gocryptfs/1.7.1
-  gocryptfs_active: False   # wenn gocryptfs aktiv sein soll bitte auf True setzen, sonst auf False
+  gocryptfs_active: False
 
 cutadapt:
-  cutadapt_version: cutadapt # cutadapt Version am besten >=1.15(derzeitige Clusterversion)
-  cutadapt_active: True   # wenn cutadapt aktiv sein soll bitte auf True setzen, sonst auf False
-  adapters: # hier können beliebig viele Adapter gesetzt werden, einfach - und dann einen Adapter (alle angegebenen werden auch im Pipeline run verwendet)
+  cutadapt_version: cutadapt 
+  cutadapt_active: False  
+  cutadapt_threads: 1
+  adapters: 
     - CTGTCTCTTATACACATCT
     - ACGGATCGATCGATCGATCGAT
 
-  # der adaptertyp gibt an ob die angegebenen adapter 3', 5', beides o.Ä. sind mehr dazu: https://cutadapt.readthedocs.io/en/stable/guide.html#adapter-types
-  # einfache Optionen: a für 3', g für 5' aber es gibt mehr Optionen die Adaptertypen sind in 1:1 Beziehung mit den Adaptern. Falls es daher weniger Adaptertypen als Adapter gibt, wird nur der erste Adaptertyp für alle Adapter genutzt.
-  # Am Ende eines Laufes mit cutadapt wird auch nochmal angegeben mit welchen Adaptern cutadapt ausgeführt wurde
+  
   adapter_type: 
     - a
     - g
-  other_params: "--quality-cutoff 10 --max-n 0" # hier sind gerade nur Beispiel Optionen
-  # ToDo: Link zur Wikiseite der Pipeline wo dann sinnvolle Kommandos kurz erklärt werden 
+  other_params: ""
+
+rseqc:
+  rseqc_active: True
+  gtf_file: "/path/to/gtf_file" 
+  genomeDir: "/path/to/genomeDir"
+  strandedness: False 
+  STAR_threads: 12
+  other_params: ""
+  STAR_version: STAR/2.7.5a-git 

@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.getcwd())+"/scripts")
 from helper import validateSamplesheet, validateOutput, validateProjectNum
 import pandas as pd
 import re
+p = os.path.abspath(".")
 # just to keep the rules more readable
 dirname=os.path.dirname
 
@@ -17,24 +18,17 @@ samplesheet = config["bcl2fastq"]["SampleSheet"]
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 fastqre   = re.compile(r'\.fastq.gz$')
 
-def getFastqs():
-    if os.path.isfile(config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"):
-        fastqs = list(
-            map(
-                lambda x: os.path.join(outputfolder, x),
-                    filter(
-                        fastqre.search,
-                            os.listdir(os.path.join(outputfolder)
-        ))))
-        return fastqs
-    return list() 
-
 def validateBefore(outputfolder):
     success = validateSamplesheet(samplesheet)
     outputfolder = validateOutput(outputfolder)
     return True if success and outputfolder is not None else False
 
 validRun = validateBefore(outputfolder)
+
+# Check for projectNum in samplesheet name
+projectNum=validateProjectNum(samplesheet)
+if not projectNum:
+    print("There was no project number to be found in the samplesheet and/or the name of the samplesheet")
 
 # Set expected pipeline output
 def getOutput():
@@ -47,31 +41,11 @@ def getOutput():
 def getParentDir(wildcards):
     return dirname(str(config["bcl2fastq"]["SampleSheet"]))
 
-def getSampleNames():
-    if os.path.isfile(config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"):
-        infile = pd.read_fwf(config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx", header=None)
-        names = list(infile.iloc[:, 0].values)
-
-        for index, name in enumerate(names):
-            names[index] = name[:-9]
-        print(names)
-        return names
-    print("No samples")
-    return list()
-
-def getFastQCs(wildcards):
-    samples = getSampleNames()
-    fastQCs = list()
-    for sample in samples:
-        fastQCs.extend(expand("{out}/fastqc/{name}_fastqc.{ext}",out=outputfolder,name=sample,ext=["html","zip"]))
-    return fastQCs
-
-
 localrules: all, create_fastq_list
 
 rule all:
     input:
-        getOutput()
+        getOutput() if projectNum else ""
 
 rule bcl2fastq2:
     input:
@@ -89,13 +63,15 @@ rule bcl2fastq2:
     threads: config["bcl2fastq"]["threads"]
     message:
         "Running bcl2fastq2"
+    conda:
+        p+"/envs/bcl2fastq2.yaml"
     envmodules:
         config["bcl2fastq"]["bcl2fastq2_version"]
     shell:
         """
         mkdir -p {params.out}
         chmod ago+rwx -R {params.out}
-        bcl2fastq -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions}--no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {params.threads} -p {params.threads} 2> {log[0]}
+        bcl2fastq -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions}--no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {params.threads} -p {params.threads} > {log} 2>&1
         cp {input[0]} {params.out}
         """
 
@@ -107,7 +83,7 @@ rule create_fastq_list:
     output:
         fastq_list_file=config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"
     shell:
-        " cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' >{output}"
+        " cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' >{output}"
 
 
 
