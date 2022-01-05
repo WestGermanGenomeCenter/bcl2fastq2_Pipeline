@@ -106,7 +106,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "0:59:59",
-      "mem" : "15GB",
+      "mem" : "30GB",
       "error" : "clusterLogs/rseqc_readdup.{jobid}.errors",
       "output" : "clusterLogs/rseqc_readdup.{jobid}.output"
     },

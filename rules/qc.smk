@@ -81,7 +81,7 @@ rule rseqc_junction_annotation:
         p+"/envs/rseqc.yaml"
     shell:
         """
-        junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix} > {log} 2>&1
+        junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix} >> {log} 2>&1
         [ ! -f {output} ] && touch {output} || :
         """
 
@@ -102,7 +102,7 @@ rule rseqc_junction_saturation:
         p+"/envs/rseqc.yaml"
     shell:
         "junction_saturation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix} "
-        "> {log} 2>&1"
+        ">> {log} 2>&1"
 
 
 rule rseqc_stat:
@@ -148,7 +148,7 @@ rule rseqc_innerdis:
     conda:
         p+"/envs/rseqc.yaml"
     shell:
-        "inner_distance.py -r {input.bed} -i {input.bam} -o {params.prefix} > {log} 2>&1"
+        "inner_distance.py -r {input.bed} -i {input.bam} -o {params.prefix} >> {log} 2>&1"
 
 
 rule rseqc_readdis:
@@ -179,7 +179,7 @@ rule rseqc_readdup:
     conda:
         p+"/envs/rseqc.yaml"
     shell:
-        "read_duplication.py -i {input} -o {params.prefix} > {log} 2>&1"
+        "read_duplication.py -i {input} -o {params.prefix} >> {log} 2>&1"
 
 
 rule rseqc_readgc:
@@ -195,7 +195,7 @@ rule rseqc_readgc:
     conda:
         p+"/envs/rseqc.yaml"
     shell:
-        "read_GC.py -i {input} -o {params.prefix} > {log} 2>&1"
+        "read_GC.py -i {input} -o {params.prefix} >> {log} 2>&1"
 
 
 rule rseqc_done:
@@ -247,3 +247,4 @@ rule rseqc_done:
         """
         touch {output}
         """
+

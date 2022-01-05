@@ -145,7 +145,6 @@ if config["cutadapt"]["cutadapt_active"]:
         input:
             samples = outputfolder+"/{path}{file}.fastq.gz"
         params:
-            fastQC=config["others"]["FastQC_version"],
             path=getPath,
             html = outputfolder+"/fastqc_untrimmed/{path}{file}_fastqc.html",
             zip = outputfolder+"/fastqc_untrimmed/{path}{file}_fastqc.zip",
@@ -165,7 +164,7 @@ if config["cutadapt"]["cutadapt_active"]:
             mkdir -p {params.out}/fastqc_untrimmed/{params.path}
             chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
             unset command_not_found_handle
-            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/{params.path} > {log} 2>&1
+            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/{params.path} >> {log} 2>&1
             mv {params.zip} {output.zip}
             mv {params.html} {output.html}
             """
@@ -216,8 +215,6 @@ if config["rseqc"]["rseqc_active"]:
         threads: config["rseqc"]["STAR_threads"]
         conda:
             p+"/envs/STAR.yaml"
-        envmodules:
-            config["rseqc"]["STAR_version"]
         shell:
             "STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.outp} --outStd Log {log}"
 
@@ -226,7 +223,6 @@ rule FastQC:
     input:
         samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
     params:
-        fastQC=config["others"]["FastQC_version"],
         path=getPath,
         out=outputfolder
     output:
@@ -242,7 +238,7 @@ rule FastQC:
         """
         mkdir -p {params.out}/fastqc/{params.path}
         chmod ago+rwx -R {params.out}/fastqc/ || :
-        fastqc -q --threads {threads} {input} -o {params.out}/fastqc/{params.path} > {log} 2>&1
+        fastqc -q --threads {threads} {input} -o {params.out}/fastqc/{params.path} >> {log} 2>&1
         """
 
 
@@ -292,7 +288,7 @@ rule multiqc:
     shell:
         """
         chmod ago+rwx -R {params.output} || :
-        multiqc --filename {output} --fn_as_s_name -q --ignore-samples Undetermined* -x Undetermined* -m "star" {params.output} -m 'rseqc' {params.output} -m 'fastqc' {params.output} -m 'cutadapt' {params.output} -o {params.output} > {log} 2>&1
+        multiqc --filename {output} --fn_as_s_name -q --ignore-samples Undetermined* -x Undetermined* -m "star" {params.output} -m 'rseqc' {params.output} -m 'fastqc' {params.output} -m 'cutadapt' {params.output} -o {params.output} >> {log} 2>&1
         chmod ago+rwx -R {params.output} || :
         """
 
@@ -307,8 +303,6 @@ rule gocryptfs:
         output=outputfolder
     log:
         outputfolder+"/logs/gocryptfs.log"
-    conda:
-        p+"/envs/gocryptfs.yaml"
     message: "Run Gocryptfs"
     envmodules:
         config["gocryptfs"]["gocryptfs_version"]
@@ -318,7 +312,7 @@ rule gocryptfs:
         gocryptfs -init {params.output}/encrypted/
         mkdir -p {params.output}/plain/
         echo 'Password:'
-        gocryptfs {params.output}/encrypted/ {params.output}/plain/ > {log} 2>&1
+        gocryptfs {params.output}/encrypted/ {params.output}/plain/ >> {log} 2>&1
         rsync -av --progress {params.output}/* {params.output}/plain/ --exclude encrypted/ --exclude plain/ --remove-source-files
         fusermount -u {params.output}/plain/
         rm -r {params.output}/plain/
@@ -337,3 +331,4 @@ onerror:
 
 onstart:
     print("Setting up and running pipeline")
+

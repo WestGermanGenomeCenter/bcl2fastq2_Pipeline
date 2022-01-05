@@ -3,15 +3,13 @@
 bcl2fastq:
   barcode_mismatch: 1
   SampleSheet:
-   /path/to/SampleSheet.csv
+   /path/to/csv
   OutputFolder:
-   /path/to/OutputFolder
-  options: ""
-  threads: 12      
-  bcl2fastq2_version: bcl2fastq/2.20.0
+   /path/to/outputfolder
+  other_params: ""
+  threads: 12
 
 others:
-  FastQC_version: /software/fastqc/0.11.4/fastqc
   fastQC_threads: 1
   SHA256_threads: 1
 
@@ -20,8 +18,7 @@ gocryptfs:
   gocryptfs_active: False
 
 cutadapt:
-  cutadapt_version: cutadapt 
-  cutadapt_active: False  
+  cutadapt_active: True  
   cutadapt_threads: 1
   adapters: 
     - CTGTCTCTTATACACATCT
@@ -35,9 +32,8 @@ cutadapt:
 
 rseqc:
   rseqc_active: True
-  gtf_file: "/path/to/gtf_file" 
+  gtf_file: "/path/to/gtf" 
   genomeDir: "/path/to/genomeDir"
   strandedness: False 
   STAR_threads: 12
   other_params: ""
-  STAR_version: STAR/2.7.5a-git 

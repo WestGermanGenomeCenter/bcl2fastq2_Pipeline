@@ -34,6 +34,7 @@ if not projectNum:
 def getOutput():
     all = list()
     all.extend(expand("{out}/fastq_infiles_list.tx",out=outputfolder))
+    all.extend(expand("{out}/ToolsMitVersionierung.tx",out=outputfolder))
     if not validRun:
         all = list()
     return all
@@ -41,7 +42,7 @@ def getOutput():
 def getParentDir(wildcards):
     return dirname(str(config["bcl2fastq"]["SampleSheet"]))
 
-localrules: all, create_fastq_list
+localrules: all, create_fastq_list, create_version_control
 
 rule all:
     input:
@@ -54,24 +55,22 @@ rule bcl2fastq2:
         barcode_mismatches = config["bcl2fastq"]["barcode_mismatch"],
         threads = config["bcl2fastq"]["threads"],
         infolder = getParentDir,
-        additionalOptions=[" "+config["bcl2fastq"]["options"],""][len(config["bcl2fastq"]["options"])>0],
+        additionalOptions=[" "+config["bcl2fastq"]["other_params"],""][len(config["bcl2fastq"]["other_params"])>0],
         out = config["bcl2fastq"]["OutputFolder"]
     log:
         config["bcl2fastq"]["OutputFolder"]+"/logs/e_bcl.log"
     output:
-        bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Stats/Stats.json"
+        bcl2fastqOutput = config["bcl2fastq"]["OutputFolder"]+"/Stats/Stats.json"
     threads: config["bcl2fastq"]["threads"]
     message:
-        "Running bcl2fastq2"
+        "Running bcl2fastq"
     conda:
         p+"/envs/bcl2fastq2.yaml"
-    envmodules:
-        config["bcl2fastq"]["bcl2fastq2_version"]
     shell:
         """
         mkdir -p {params.out}
         chmod ago+rwx -R {params.out}
-        bcl2fastq -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions}--no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {params.threads} -p {params.threads} > {log} 2>&1
+        bcl2fastq -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions}--no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {params.threads} -p {params.threads} >> {log} 2>&1
         cp {input[0]} {params.out}
         """
 
@@ -85,7 +84,17 @@ rule create_fastq_list:
     shell:
         " cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' >{output}"
 
-
+rule create_version_control:
+    input:
+        p+"/config.yaml"
+    params:
+        file=p+"/scripts/versions.py"
+    output:
+        config["bcl2fastq"]["OutputFolder"]+"/ToolsMitVersionierung.tx"
+    conda:
+        p+"/envs/tools.yaml"
+    shell:
+        "python {params.file} {input} > {output}"
 
 onsuccess:
     print("Workflow finished without errors")

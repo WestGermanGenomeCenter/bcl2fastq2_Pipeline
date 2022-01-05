@@ -1,0 +1,9 @@
+name: tools
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+ 
+dependencies:
+  - python=3.9.7
+  - pyyaml=6.0
