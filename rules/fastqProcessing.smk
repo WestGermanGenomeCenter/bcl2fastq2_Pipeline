@@ -17,7 +17,7 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 
 ### include rules ###
 
-include: "qc.smk"
+include: "qcShort.smk"
 
 # Get the fastq.gz samples
 sample_names = list()
@@ -42,6 +42,20 @@ if not projectNum:
     print("There was no project number to be found in the samplesheet and/or the name of the samplesheet")
 
 
+def getFiles():
+    files = list()
+    for sample in sample_names:
+        trySplit = sample.split(os.sep)[-1]
+        if trySplit:
+            sampleName = trySplit.split("_R")[0]
+            # make fastq/669-7_S7_R1_001_deduped.Aligned.sortedByCoord.out.bam into 669-1_S1/deduped.Aligned.sortedByCoord.out.bam
+            files.append(sampleName)
+    return files
+
+
+
+
+
 # Set expected pipeline output
 def getOutput():
     all = list()
@@ -54,7 +68,12 @@ def getOutput():
         all.extend(expand("{out}/allFastQs_from_{prj}.checksums.sha256",out=outputfolder,prj=projectNum))
 
     if config["rseqc"]["rseqc_active"]:
-        all.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder))
+        all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
+
+    if config["umi_tools"]["umi_tools_active"]:
+        all.extend(expand("{out}/{name}.umis-extracted.fastq.gz",out=outputfolder,name=sample_names))
+        all.extend(expand("{out}/star/{name}/deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,name=sample_names))
+
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -100,7 +119,10 @@ def getSamples(wildcards):
     if isSingleEnd():
         for sample in sample_names:
             if str(wildcards) in sample:
-                return expand("{out}/{file}.fastq.gz",out=outputfolder,file=sample)
+                if config["umi_tools"]["umi_tools_active"]:
+                    return expand("{out}/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
+                else:
+                    return expand("{out}/{file}.fastq.gz",out=outputfolder,file=sample)
     sampleName = str(wildcards).split("_R")[0]
     R1and2 = list()
     for sample in sample_names:
@@ -108,7 +130,12 @@ def getSamples(wildcards):
         if trySplit:
             if trySplit.startswith(sampleName):
                 R1and2.append(sample)
-    return expand("{out}/{file}.fastq.gz",out=outputfolder,file=R1and2)
+    if config["umi_tools"]["umi_tools_active"]:
+        return expand("{out}/{file}.umis-extracted.fastq.gz",out=outputfolder,file=R1and2)
+    else:
+        return expand("{out}/{file}.fastq.gz",out=outputfolder,file=R1and2)
+
+
 
 def getPath(wildcards):
     """
@@ -172,7 +199,7 @@ if config["cutadapt"]["cutadapt_active"]:
 
     rule cutadapt:
         input:
-            samples = outputfolder+"/{name}.fastq.gz"
+            outputfolder+"/{name}.fastq.gz" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/{name}.umis-extracted.fastq.gz" 
         params:
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],
@@ -195,12 +222,12 @@ if config["cutadapt"]["cutadapt_active"]:
 
 if config["rseqc"]["rseqc_active"]:
     rule align:
-        input:
-            fastqs=getSamples 
+        input:# need to change this soon to be umi-tools aware
+            fastqs=getSamples
         output:
             # see STAR manual for additional output files
-            expand("{out}/star/{{file}}/Aligned.sortedByCoord.out.bam",out=outputfolder),
-            expand("{out}/star/{{file}}/ReadsPerGene.out.tab",out=outputfolder)
+            bams=expand("{out}/star/{{file}}/Aligned.sortedByCoord.out.bam",out=outputfolder), #this needs to be deduped 
+            tabs=expand("{out}/star/{{file}}/ReadsPerGene.out.tab",out=outputfolder)
         wildcard_constraints:
             file="(.*(?:_).*)"
         log:
@@ -240,6 +267,78 @@ rule FastQC:
         chmod ago+rwx -R {params.out}/fastqc/ || :
         fastqc -q --threads {threads} {input} -o {params.out}/fastqc/{params.path} >> {log} 2>&1
         """
+
+
+# the umi extract is wanted before the fastqc happens, we dont need umi qc scores
+
+if config["umi_tools"]["umi_tools_active"]:
+    rule umi_extract:
+        input:
+            samples = outputfolder+"/{name}.fastq.gz" 
+
+        params:
+            path=getPath,
+            umi_ptrn=config["umi_tools"]["pattern"],
+            unzipped_files=outputfolder+"/{name}.fastq",
+            extended_name=config["umi_tools"]["extended_name"],
+            outputf=outputfolder+"/umi_extract",
+            out=outputfolder
+        log:
+            outputfolder+"/logs/{name}.umi_extract.log"
+        conda:
+            p+"/envs/umi_tools.yaml"
+        output:
+            expand("{out}/{{name}}.umis-extracted.fastq.gz",out=outputfolder)
+        shell:
+            """
+            mkdir -p {params.outputf}
+            umi_tools extract --stdin={input} --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
+            """ 
+    
+    rule umi_dedup:
+        input:
+            outputfolder+"/star/{name}/Aligned.sortedByCoord.out.bam"
+        params:
+            path=getPath,
+            out=outputfolder,
+            sorted_bam=outputfolder+"/star/{name}/sorted.Aligned.sortedByCoord.out.bam"
+        log:
+            outputfolder+"/logs/{name}.umi_dedup.log"
+        conda:
+            p+"/envs/umi_tools.yaml"
+        threads:
+            config["umi_tools"]["threads"]
+        output:
+            outputfolder+"/star/{name}/deduped.Aligned.sortedByCoord.out.bam"
+        shell:
+            """
+            samtools sort --threads {threads} {input} -o {params.sorted_bam}
+            samtools index {params.sorted_bam}
+            umi_tools dedup -I {params.sorted_bam} --output-stats={log} -S {output}
+            """
+
+
+    rule featurecounts:
+        input:
+            expand("{out}/star/{name}/deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,name=sample_names)
+        params:
+            gtf=config["rseqc"]["gtf_file"],
+            stranded=config["umi_tools"]["stranded"],
+            outdir=outputfolder+"/counts",
+
+        threads:
+            config["umi_tools"]["threads"]
+        conda:
+            p+"/envs/umi_tools.yaml"
+        output:
+            counts_file=outputfolder+"/counts/all.tsv",
+        shell:
+            """
+            mkdir -p {params.outdir}
+            featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {threads} -g gene_id -s {params.stranded}
+            """
+
+
 
 
 rule SHA256:

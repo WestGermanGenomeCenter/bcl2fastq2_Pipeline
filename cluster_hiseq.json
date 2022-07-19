@@ -29,6 +29,38 @@
       "error" : "clusterLogs/{jobid}.errors",
       "output" : "clusterLogs/{jobid}.output"
     },
+    "featurecounts" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "0:12:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/featurecounts.{jobid}.errors",
+      "output" : "clusterLogs/featurecounts.{jobid}.output"
+    },
+
+    "umi_dedup" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "7:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/umi_dedup.{jobid}.errors",
+      "output" : "clusterLogs/umi_dedup.{jobid}.output"
+    },
+
+    "umi_extract" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "1:59:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/umi_extract.{jobid}.errors",
+      "output" : "clusterLogs/umi_extract.{jobid}.output"
+    },
     "align" :
     {
       "account" : "HiSeq3000",

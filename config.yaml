@@ -37,3 +37,11 @@ rseqc:
   strandedness: False 
   STAR_threads: 12
   other_params: ""
+
+umi_tools:
+  umi_tools_active: True
+  pattern: "NNNNNNNNNN" # 6nt umi + tata = 10nt UMI
+  extended_name: "umiextr"
+  umi_tools_dedup_bam: True
+  threads: 12
+  stranded: 1 # featurecounts parameter -s 

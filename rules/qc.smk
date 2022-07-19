@@ -37,19 +37,19 @@ if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     sample_names = [fastq[:-9] for fastq in fastqs]
 
 localrules: count_matrix
-
-rule count_matrix:
-    input:
-        expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getFiles())
-    output:
-        outputfolder+"/counts/all.tsv"
-    params:
-        samples=getFiles(),
-        strand=config["rseqc"]["strandedness"]
-    conda:
-        p+"/envs/pandas.yaml"
-    script:
-        "../scripts/count-matrix.py"
+if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
+    rule count_matrix:
+        input:
+            expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getFiles())
+        output:
+            outputfolder+"/counts/all.tsv"
+        params:
+            samples=getFiles(),
+            strand=config["rseqc"]["strandedness"]
+        conda:
+            p+"/envs/pandas.yaml"
+        script:
+            "../scripts/count-matrix.py"
     
 rule rseqc_gtf2bed:
     input:
