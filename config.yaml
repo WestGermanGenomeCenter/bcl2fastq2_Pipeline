@@ -40,7 +40,7 @@ rseqc:
 
 umi_tools:
   umi_tools_active: True
-  pattern: "NNNNNNNNNN" # 6nt umi + tata = 10nt UMI
+  pattern: "(?P<umi_1>.{6})(?P<discard_1>TATA).+" # 6nt umi + tata = 10nt UMI
   extended_name: "umiextr"
   umi_tools_dedup_bam: True
   threads: 12

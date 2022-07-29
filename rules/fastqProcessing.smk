@@ -278,7 +278,7 @@ if config["umi_tools"]["umi_tools_active"]:
 
         params:
             path=getPath,
-            umi_ptrn=config["umi_tools"]["pattern"],
+            umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
             unzipped_files=outputfolder+"/{name}.fastq",
             extended_name=config["umi_tools"]["extended_name"],
             outputf=outputfolder+"/umi_extract",
@@ -292,7 +292,7 @@ if config["umi_tools"]["umi_tools_active"]:
         shell:
             """
             mkdir -p {params.outputf}
-            umi_tools extract --stdin={input} --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
+            umi_tools extract --stdin={input} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
             """ 
     
     rule umi_dedup:
