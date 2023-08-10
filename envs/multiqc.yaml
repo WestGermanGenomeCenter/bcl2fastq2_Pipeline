@@ -6,4 +6,4 @@ channels:
   - http://conda.repo.test.hhu.de/conda-forge
  
 dependencies:
-  - multiqc=1.11
+  - multiqc=1.14

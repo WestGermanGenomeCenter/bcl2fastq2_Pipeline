@@ -8,6 +8,12 @@ bcl2fastq:
    /path/to/outputfolder
   other_params: ""
   threads: 12
+  options: ""
+  bcl_convert_path: "/gpfs/project/projects/bmfz_gtl/software/software_tests/bcl2fastq2_update/bcl-convert"
+  bcl2fastq2_version: "2.20.0.422"
+
+
+  
 
 others:
   fastQC_threads: 1
@@ -40,8 +46,23 @@ rseqc:
 
 umi_tools:
   umi_tools_active: True
-  pattern: "(?P<umi_1>.{6})(?P<discard_1>TATA).+" # 6nt umi + tata = 10nt UMI
+  pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"'' # 6nt umi + tata = 10nt UMI
   extended_name: "umiextr"
   umi_tools_dedup_bam: True
   threads: 12
   stranded: 1 # featurecounts parameter -s 
+
+kraken2:
+  kraken2_active: True
+  kraken2_database: "/gpfs/project/databases/Kraken2-2022-09-28/kraken_db_plus"
+  kraken2_threads: 2
+
+
+transfer:
+  transfer_active: True
+  transfer_to: "134.99.204.8:/mnt/data/pipelines/"
+  transfer_as: "daniel@"
+
+
+ # add instructions for ssh-keygen and ssh-copy-id daniel@134.99.204.8
+ # add settings for receiving folder 2>&1

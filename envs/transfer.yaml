@@ -1,0 +1,10 @@
+name: tranfer
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/cond
+  - http://conda.repo.test.hhu.de/bioc
+  - http://conda.repo.test.hhu.de/main
+
+dependencies:
+  - scp
+  - rsync

@@ -1,8 +1,10 @@
+name: kraken2
 channels:
   - nodefaults
+  - http://conda.repo.test.hhu.de/conda-forge
   - http://conda.repo.test.hhu.de/bioconda
   - http://conda.repo.test.hhu.de/main
-  - http://conda.repo.test.hhu.de/conda-forge
-  
+
 dependencies:
-  - pandas=2.0.0
+  - pigz=2.6
+  - kraken2=2.1.2

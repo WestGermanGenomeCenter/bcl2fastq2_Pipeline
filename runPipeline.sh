@@ -2,6 +2,7 @@
 source /software/conda/3/etc/profile.d/conda.sh
 conda activate bcl2fastq2
 umask 000 # give rights to overwrite clusterLogs after each run
+module load Snakemake/6.4.0
 
 # check for clusterLogs folder if it doesn't exist create it
 [ ! -d "cluserLogs" ] && mkdir -p "clusterLogs"
@@ -47,7 +48,7 @@ else
             echo "Pipeline running with available queue";
     fi
 
-    echo "Snakemake parameter: $snakemake_params"
+    echo "Snakemake parameters: $snakemake_params"
 
     # run pipeline on hpc in two steps
     snakemake $snakemake_params -s rules/bcl2fastq.smk --use-envmodules --conda-frontend mamba --use-conda --cluster-config $cluster_param --cluster "qsub -m n -A {cluster.account} ${QUEUE} -l select={cluster.nodes}:ncpus={config["bcl2fastq"]["threads"]}:mem={cluster.mem} -l walltime={cluster.time} -r n -o {cluster.output} -e {cluster.error}" -j 99 --latency-wait 300 -p --keep-going --cluster-status "python snakemake-utils/statuscommand.py" --jobscript scripts/jobscript.sh --max-status-checks-per-second 1

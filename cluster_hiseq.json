@@ -24,10 +24,20 @@
       "account" : "HiSeq3000",
       "queue" : "workq",
       "nodes" : 1,
-      "time" : "13:59:59",
-      "mem" : "40GB",
+      "time" : "3:59:59",
+      "mem" : "62GB",
       "error" : "clusterLogs/{jobid}.errors",
       "output" : "clusterLogs/{jobid}.output"
+    },
+    "FastQC" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "00:44:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/FastQC.{jobid}.errors",
+      "output" : "clusterLogs/FastQC.{jobid}.output"
     },
     "featurecounts" :
     {

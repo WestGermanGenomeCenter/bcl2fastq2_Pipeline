@@ -5,4 +5,4 @@ channels:
   - http://conda.repo.test.hhu.de/conda-forge
  
 dependencies:
-  - gffutils=0.10
+  - gffutils=0.11.1

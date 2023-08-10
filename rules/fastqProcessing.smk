@@ -17,7 +17,7 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 
 ### include rules ###
 
-include: "qcShort.smk"
+include: "qc.smk"
 
 # Get the fastq.gz samples
 sample_names = list()
@@ -65,14 +65,24 @@ def getOutput():
     else:
         all.extend(expand("{out}/{name}.fastq.gz",out=outputfolder,name=sample_names))
         all.extend(expand("{out}/multiqc_report_{prj}.html",out=outputfolder,prj=projectNum))
-        all.extend(expand("{out}/allFastQs_from_{prj}.checksums.sha256",out=outputfolder,prj=projectNum))
+        #all.extend(expand("{out}/allFastQs_from_{prj}.checksums.sha256",out=outputfolder,prj=projectNum))
 
     if config["rseqc"]["rseqc_active"]:
         all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
+        all.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder)) # outputfolder+"/qc/rseqc/done.flag"
 
     if config["umi_tools"]["umi_tools_active"]:
-        all.extend(expand("{out}/{name}.umis-extracted.fastq.gz",out=outputfolder,name=sample_names))
+        all.extend(expand("{out}/umi_extract/{name}.umis-extracted.fastq.gz",out=outputfolder,name=sample_names))
         all.extend(expand("{out}/star/{name}/deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,name=sample_names))
+
+    if config["cutadapt"]["cutadapt_active"]:
+        all.extend(expand("{out}/trimmed/{name}.fastq.gz",out=outputfolder,name=sample_names))
+
+    if config["kraken2"]["kraken2_active"]:
+        all.extend(expand("{out}/kraken2/{name}.report",out=outputfolder,name=sample_names))
+
+    if config["transfer"]["transfer_active"]:
+        all.extend(expand("{out}/transfer/transfer_log.log",out=outputfolder))
 
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
@@ -80,10 +90,10 @@ def getOutput():
     return all
 
 
-def getSHA256(wildcards):
-    sha256s = list()
-    sha256s.extend(expand("{out}/sha256/{name}.checksums.sha256",out=outputfolder,name=sample_names))
-    return sha256s
+#def getSHA256(wildcards):
+#    sha256s = list()
+#    sha256s.extend(expand("{out}/sha256/{name}.checksums.sha256",out=outputfolder,name=sample_names))
+#    return sha256s
 
 def getFastQCs(wildcards):
     fastQCs = list()
@@ -120,7 +130,8 @@ def getSamples(wildcards):
         for sample in sample_names:
             if str(wildcards) in sample:
                 if config["umi_tools"]["umi_tools_active"]:
-                    return expand("{out}/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
+                    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
+                    #{out}/umi_extract/{{name}}.umis-extracted.fastq.gz
                 else:
                     return expand("{out}/{file}.fastq.gz",out=outputfolder,file=sample)
     sampleName = str(wildcards).split("_R")[0]
@@ -199,7 +210,7 @@ if config["cutadapt"]["cutadapt_active"]:
 
     rule cutadapt:
         input:
-            outputfolder+"/{name}.fastq.gz" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/{name}.umis-extracted.fastq.gz" 
+            outputfolder+"/{name}.fastq.gz" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/umi_extract/{name}.umis-extracted.fastq.gz" 
         params:
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],
@@ -220,7 +231,7 @@ if config["cutadapt"]["cutadapt_active"]:
             cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
             """
 
-if config["rseqc"]["rseqc_active"]:
+#if config["rseqc"]["rseqc_active"]:
     rule align:
         input:# need to change this soon to be umi-tools aware
             fastqs=getSamples
@@ -243,15 +254,19 @@ if config["rseqc"]["rseqc_active"]:
         conda:
             p+"/envs/STAR.yaml"
         shell:
-            "STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.outp} --outStd Log {log}"
-
+            """
+            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.outp} --outStd Log {log}
+            chmod ago+rwx -R {params.outp} >> {log} 2>&1
+            samtools index {output.bams} >> {log} 2>&1
+            """
 
 rule FastQC:
     input:
         samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
     params:
         path=getPath,
-        out=outputfolder
+        out=outputfolder,
+        fastp_report=expand("{out}/fastqc/{{name}}_fastp.{ext}", out=outputfolder, ext=["html"])
     output:
         expand("{out}/fastqc/{{name}}_fastqc.{ext}", out=outputfolder, ext=["html","zip"])
     threads: config["others"]["fastQC_threads"]
@@ -263,9 +278,10 @@ rule FastQC:
         "Run FastQC"
     shell:
         """
-        mkdir -p {params.out}/fastqc/{params.path}
-        chmod ago+rwx -R {params.out}/fastqc/ || :
+        mkdir -p {params.out}/fastqc/{params.path} >> {log} 2>&1
         fastqc -q --threads {threads} {input} -o {params.out}/fastqc/{params.path} >> {log} 2>&1
+        fastp -i {input} -h {params.fastp_report} >> {log} 2>&1
+        chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
         """
 
 
@@ -288,11 +304,12 @@ if config["umi_tools"]["umi_tools_active"]:
         conda:
             p+"/envs/umi_tools.yaml"
         output:
-            expand("{out}/{{name}}.umis-extracted.fastq.gz",out=outputfolder)
+            expand("{out}/umi_extract/{{name}}.umis-extracted.fastq.gz",out=outputfolder)
         shell:
             """
             mkdir -p {params.outputf}
             umi_tools extract --stdin={input} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
+            chmod ago+rwx -R {params.outputf}
             """ 
     
     rule umi_dedup:
@@ -315,6 +332,7 @@ if config["umi_tools"]["umi_tools_active"]:
             samtools sort --threads {threads} {input} -o {params.sorted_bam}
             samtools index {params.sorted_bam}
             umi_tools dedup -I {params.sorted_bam} --output-stats={log} -S {output}
+            chmod ago+rwx -R {params.out}
             """
 
 
@@ -326,48 +344,99 @@ if config["umi_tools"]["umi_tools_active"]:
             stranded=config["umi_tools"]["stranded"],
             outdir=outputfolder+"/counts",
 
+
         threads:
             config["umi_tools"]["threads"]
         conda:
             p+"/envs/umi_tools.yaml"
         output:
-            counts_file=outputfolder+"/counts/all.tsv",
+            counts_file=outputfolder+"/counts/all.tsv"
         shell:
             """
             mkdir -p {params.outdir}
             featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {threads} -g gene_id -s {params.stranded}
+            chmod ago+rwx -R {params.outdir}
             """
 
 
+if config["kraken2"]["kraken2_active"]:
+    rule kraken2:
+        input:
+            samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
+
+            #samples = outputfolder+"/{name}.fastq.gz" 
+        params:
+            kraken2_db=config["kraken2"]["kraken2_database"],
+            outfile=temp(outputfolder+"/kraken2/{name}.kraken2"),
+            outdir=outputfolder+"/kraken2",
+            summary=outputfolder+"/kraken2/{name}.summary"
+        log:
+            outputfolder+"/logs/{name}.kraken2.log"
+        threads:
+            config["kraken2"]["kraken2_threads"]
+        conda:
+            p+"/envs/kraken2.yaml"
+        output:
+            report_file=outputfolder+"/kraken2/{name}.report"
+        shell:
+            """
+            mkdir -p {params.outdir}
+            kraken2 --use-names --db {params.kraken2_db} --threads {threads} --gzip-compressed --confidence 0.05 --report {output} {input} >{params.outfile} >> {log} 2>&1
+            # summary command
+            cat {output} | sort -h -k 1 -r | head -n 85 | grep "F\s" >{params.summary}
+            chmod ago+rwx -R {params.outdir} >> {log} 2>&1
+            """
 
 
-rule SHA256:
+rule transfer_files:
     input:
-        samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
+        folder_to_transfer = outputfolder
+    params:
+        i_d = config["transfer"]["transfer_as"],
+        destination = config["transfer"]["transfer_to"],
+        outdir_transfer = outputfolder+"/transfer",
+        outfolder_all = outputfolder
+    threads:
+        2
+    conda:
+        p+"/envs/transfer.yaml"
     output:
-        expand("{out}/sha256/{{name}}.checksums.{ext}", out=outputfolder, ext=["sha256"])
-    threads: config["others"]["SHA256_threads"]
-    message:
-        "Run SHA256"
+        logfile = outputfolder+ "/transfer/transfer_log.log"
     shell:
         """
-        (sha256sum {input} | cut -d ' ' -f 1| tr -d '\n') > {output}
-        echo -n -e " $(basename {input}) \n" >> {output}
+        mkdir -p {params.outdir_transfer}
+        rsync -rzvP {params.outfolder_all} {params.i_d}{params.destination} 2>{output}
         """
 
 
-rule mergeSHA256:
-    input:
-        getSHA256
-    output:
-        "{out}/allFastQs_from_{prj}.checksums.sha256".format(out=outputfolder,prj=projectNum)
-    threads: 1
-    message:
-        "Run mergeSHA256"
-    shell:
-        """
-        cat {input} >> {output}
-        """
+
+#rule SHA256:
+#    input:
+#        samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
+#    output:
+#        expand("{out}/sha256/{{name}}.checksums.{ext}", out=outputfolder, ext=["sha256"])
+#    threads: config["others"]["SHA256_threads"]
+#    message:
+#        "Run SHA256"
+#    shell:
+#        """
+#        (sha256sum {input} | cut -d ' ' -f 1| tr -d '\n') > {output}
+#        echo -n -e " $(basename {input}) \n" >> {output}
+#        """
+
+
+#rule mergeSHA256:
+#    input:
+#        getSHA256
+#    output:
+#        "{out}/allFastQs_from_{prj}.checksums.sha256".format(out=outputfolder,prj=projectNum)
+#    threads: 1
+#    message:
+#        "Run mergeSHA256"
+#    shell:
+#        """
+#        cat {input} >> {output}
+#        """
 
 
 rule multiqc:
@@ -430,4 +499,3 @@ onerror:
 
 onstart:
     print("Setting up and running pipeline")
-

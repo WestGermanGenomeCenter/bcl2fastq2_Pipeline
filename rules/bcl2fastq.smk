@@ -34,6 +34,7 @@ if not projectNum:
 def getOutput():
     all = list()
     all.extend(expand("{out}/fastq_infiles_list.tx",out=outputfolder))
+    all.extend(expand("{out}/{num}_sha256sums_fastqfiles.txt",out=outputfolder,num=projectNum))# projectNum+"_sha256sums_fastqfiles.txt"
     all.extend(expand("{out}/ToolsMitVersionierung.tx",out=outputfolder))
     if not validRun:
         all = list()
@@ -95,6 +96,16 @@ rule create_version_control:
         p+"/envs/tools.yaml"
     shell:
         "python {params.file} {input} > {output}"
+        
+rule create_checksums:
+    input:
+        fastq_list_file=config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"
+    params:
+        out=config["bcl2fastq"]["OutputFolder"]
+    output:
+        checksum_file=config["bcl2fastq"]["OutputFolder"]+"/"+projectNum+"_sha256sums_fastqfiles.txt"
+    shell:
+        "cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' | xargs sha256sum >>{output}"
 
 onsuccess:
     print("Workflow finished without errors")

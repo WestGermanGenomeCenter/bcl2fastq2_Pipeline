@@ -5,7 +5,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "0:59:59",
-      "mem" : "1GB",
+      "mem" : "8GB",
       "error" : "clusterLogs/{rule}.{jobid}.errors",
       "output" : "clusterLogs/{rule}.{jobid}.output"
     },
@@ -26,7 +26,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "1:59:59",
-      "mem" : "15GB",
+      "mem" : "48GB",
       "error" : "clusterLogs/bcl2fastq2.{jobid}.errors",
       "output" : "clusterLogs/bcl2fastq2.{jobid}.output"
     },
@@ -41,7 +41,7 @@
       "error" : "clusterLogs/featurecounts.{jobid}.errors",
       "output" : "clusterLogs/featurecounts.{jobid}.output"
     },
-
+    
     "umi_dedup" :
     {
       "account" : "HiSeq3000",
@@ -53,6 +53,38 @@
       "output" : "clusterLogs/umi_dedup.{jobid}.output"
     },
 
+    "kraken2" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "00:32:59",
+      "mem" : "256GB",
+      "error" : "clusterLogs/kraken2.{jobid}.errors",
+      "output" : "clusterLogs/kraken2.{jobid}.output"
+    },
+
+    "FastQC" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "00:44:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/FastQC.{jobid}.errors",
+      "output" : "clusterLogs/FastQC.{jobid}.output"
+    },
+    
+    "transfer_files" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "time" : "00:32:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/transfer.{jobid}.errors",
+      "output" : "clusterLogs/transfer.{jobid}.output"
+    },
     "umi_extract" :
     {
       "account" : "HiSeq3000",

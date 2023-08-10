@@ -33,6 +33,8 @@ if not projectNum:
 def getOutput():
     all = list()
     all.extend(expand("{out}/fastq_infiles_list.tx",out=outputfolder))
+    all.extend(expand("{out}/{num}_sha256sums_fastqfiles.txt",out=outputfolder,num=projectNum))# projectNum+"_sha256sums_fastqfiles.txt"
+
     if not validRun:
         all = list()
     return all
@@ -55,12 +57,14 @@ rule bcl2fastq2:
         infolder = getParentDir,
         additionalOptions=[" "+config["bcl2fastq"]["options"],""][len(config["bcl2fastq"]["options"])>0],
         # add param for bcl convert location
-        bcl_convert_path = config["bcl_convert_path"]
-        out = config["bcl2fastq"]["OutputFolder"]
+        bcl_convert_path = config["bcl2fastq"]["bcl_convert_path"],
+        out = config["bcl2fastq"]["OutputFolder"],
+        outfastqs = config["bcl2fastq"]["OutputFolder"] + "/*.fastq.gz",
+        output_dir = config["bcl2fastq"]["OutputFolder"] + "/" + projectNum
     log:
         config["bcl2fastq"]["OutputFolder"]+"/logs/e_bcl.log"
     output:
-        bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Stats/Stats.json"
+        bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv"
     threads: config["bcl2fastq"]["threads"]
     message:
         "Running bcl convert"
@@ -74,9 +78,10 @@ rule bcl2fastq2:
         """
         mkdir -p {params.out}
         chmod ago+rwx -R {params.out}
-        {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --no-lane-splitting --output-directory {params.out} --bcl-num-decompression-threads {params.threads} --bcl-conversion-threads {params.threads} --bcl-num-compression-threads {params.threads} --bcl-num-parallel-tiles {params.threads}
-       # bcl2fastq -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions}--no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {params.threads} -p {params.threads} 2> {log[0]}
+        {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --no-lane-splitting true --output-directory {params.out} --force --bcl-num-decompression-threads {params.threads} --bcl-num-conversion-threads {params.threads} --bcl-num-compression-threads {params.threads} --bcl-num-parallel-tiles {params.threads}
         cp {input[0]} {params.out}
+        mkdir -p {params.output_dir} && mv {params.outfastqs} {params.output_dir}
+        chmod 775 -R {params.output_dir}
         """
 
 rule create_fastq_list:
@@ -88,6 +93,16 @@ rule create_fastq_list:
         fastq_list_file=config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"
     shell:
         " cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' >{output}"
+
+rule create_checksums:
+    input:
+        fastq_list_file=config["bcl2fastq"]["OutputFolder"]+"/fastq_infiles_list.tx"
+    params:
+        out=config["bcl2fastq"]["OutputFolder"]
+    output:
+        checksum_file=config["bcl2fastq"]["OutputFolder"]+"/"+projectNum+"_sha256sums_fastqfiles.txt"
+    shell:
+        "cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' | xargs sha256sum >>{output}"
 
 
 
