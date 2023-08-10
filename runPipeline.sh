@@ -35,7 +35,7 @@ if $local ; then
     set +x
     # overwrite hpc envs with local envs
     cp envs/local/* envs/
-    snakemake $snakemake_params -s rules/bcl2fastq.smk --conda-frontend mamba --use-conda -p --keep-going
+    snakemake $snakemake_params -s rules/convert2fastq.smk --conda-frontend mamba --use-conda -p --keep-going
     snakemake $snakemake_params -s rules/fastqProcessing.smk --resources --conda-frontend mamba --use-conda -p --keep-going
     # overwrite local envs with hpc envs again
     cp envs/hpc/* envs/
@@ -51,7 +51,7 @@ else
     echo "Snakemake parameters: $snakemake_params"
 
     # run pipeline on hpc in two steps
-    snakemake $snakemake_params -s rules/bcl2fastq.smk --use-envmodules --conda-frontend mamba --use-conda --cluster-config $cluster_param --cluster "qsub -m n -A {cluster.account} ${QUEUE} -l select={cluster.nodes}:ncpus={config["bcl2fastq"]["threads"]}:mem={cluster.mem} -l walltime={cluster.time} -r n -o {cluster.output} -e {cluster.error}" -j 99 --latency-wait 300 -p --keep-going --cluster-status "python snakemake-utils/statuscommand.py" --jobscript scripts/jobscript.sh --max-status-checks-per-second 1
+    snakemake $snakemake_params -s rules/convert2fastq.smk --use-envmodules --conda-frontend mamba --use-conda --cluster-config $cluster_param --cluster "qsub -m n -A {cluster.account} ${QUEUE} -l select={cluster.nodes}:ncpus={config["bcl2fastq"]["threads"]}:mem={cluster.mem} -l walltime={cluster.time} -r n -o {cluster.output} -e {cluster.error}" -j 99 --latency-wait 300 -p --keep-going --cluster-status "python snakemake-utils/statuscommand.py" --jobscript scripts/jobscript.sh --max-status-checks-per-second 1
     snakemake $snakemake_params -s rules/fastqProcessing.smk --resources --use-envmodules --conda-frontend mamba --use-conda --cluster-config $cluster_param --cluster "qsub -m n -A {cluster.account} ${QUEUE} -l select={cluster.nodes}:ncpus={threads}:mem={cluster.mem} -l walltime={cluster.time} -r n -o {cluster.output} -e {cluster.error}" -j 5000 --latency-wait 300 -p --keep-going --cluster-status "python snakemake-utils/statuscommand.py" --jobscript scripts/jobscript.sh --max-status-checks-per-second 1
 fi
 
