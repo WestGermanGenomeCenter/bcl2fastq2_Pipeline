@@ -5,7 +5,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "0:59:59",
-      "mem" : "8GB",
+      "mem" : "16GB",
       "error" : "clusterLogs/{rule}.{jobid}.errors",
       "output" : "clusterLogs/{rule}.{jobid}.output"
     },
@@ -59,7 +59,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "00:32:59",
-      "mem" : "256GB",
+      "mem" : "164GB",
       "error" : "clusterLogs/kraken2.{jobid}.errors",
       "output" : "clusterLogs/kraken2.{jobid}.output"
     },
@@ -70,7 +70,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "time" : "00:44:59",
-      "mem" : "8GB",
+      "mem" : "16GB",
       "error" : "clusterLogs/FastQC.{jobid}.errors",
       "output" : "clusterLogs/FastQC.{jobid}.output"
     },

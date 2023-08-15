@@ -90,11 +90,6 @@ def getOutput():
     return all
 
 
-#def getSHA256(wildcards):
-#    sha256s = list()
-#    sha256s.extend(expand("{out}/sha256/{name}.checksums.sha256",out=outputfolder,name=sample_names))
-#    return sha256s
-
 def getFastQCs(wildcards):
     fastQCs = list()
     fastQCs.extend(expand("{out}/fastqc/{name}_fastqc.{ext}",out=outputfolder,name=sample_names,ext=["html","zip"]))
@@ -170,7 +165,7 @@ def getFastqs(wildcards):
     return samples
 
 # local rules
-localrules: all, mergeSHA256, gocryptfs
+localrules: all, gocryptfs
 
 
 rule all:
@@ -231,7 +226,6 @@ if config["cutadapt"]["cutadapt_active"]:
             cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
             """
 
-#if config["rseqc"]["rseqc_active"]:
     rule align:
         input:# need to change this soon to be umi-tools aware
             fastqs=getSamples
@@ -382,8 +376,6 @@ if config["kraken2"]["kraken2_active"]:
             """
             mkdir -p {params.outdir}
             kraken2 --use-names --db {params.kraken2_db} --threads {threads} --gzip-compressed --confidence 0.05 --report {output} {input} >{params.outfile} >> {log} 2>&1
-            # summary command
-            cat {output} | sort -h -k 1 -r | head -n 85 | grep "F\s" >{params.summary}
             chmod ago+rwx -R {params.outdir} >> {log} 2>&1
             """
 
@@ -407,37 +399,6 @@ rule transfer_files:
         mkdir -p {params.outdir_transfer}
         rsync -rzvP {params.outfolder_all} {params.i_d}{params.destination} 2>{output}
         """
-
-
-
-#rule SHA256:
-#    input:
-#        samples = outputfolder+"/{name}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else rules.cutadapt.output
-#    output:
-#        expand("{out}/sha256/{{name}}.checksums.{ext}", out=outputfolder, ext=["sha256"])
-#    threads: config["others"]["SHA256_threads"]
-#    message:
-#        "Run SHA256"
-#    shell:
-#        """
-#        (sha256sum {input} | cut -d ' ' -f 1| tr -d '\n') > {output}
-#        echo -n -e " $(basename {input}) \n" >> {output}
-#        """
-
-
-#rule mergeSHA256:
-#    input:
-#        getSHA256
-#    output:
-#        "{out}/allFastQs_from_{prj}.checksums.sha256".format(out=outputfolder,prj=projectNum)
-#    threads: 1
-#    message:
-#        "Run mergeSHA256"
-#    shell:
-#        """
-#        cat {input} >> {output}
-#        """
-
 
 rule multiqc:
     input:
@@ -463,8 +424,7 @@ rule multiqc:
 
 rule gocryptfs:
     input:
-        rules.multiqc.output,
-        rules.mergeSHA256.output
+        rules.multiqc.output
     output:
         "{out}/encrypted/gocryptfs.conf".format(out=outputfolder)
     params:

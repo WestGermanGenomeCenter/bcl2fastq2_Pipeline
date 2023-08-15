@@ -70,10 +70,6 @@ rule bcl2fastq2:
         "Running bcl convert"
     envmodules:
         config["bcl2fastq"]["bcl2fastq2_version"]
-        # change the cmd params for bcl convert
-        # then make a new runPipeline.sh with a -n option
-        # or make a config params to switch between bcl convert and bcl2fastq?????
-        # barcode mismatches no longer part of command line arguments, now part of the samplesheet
     shell:
         """
         mkdir -p {params.out}
@@ -103,8 +99,6 @@ rule create_checksums:
         checksum_file=config["bcl2fastq"]["OutputFolder"]+"/"+projectNum+"_sha256sums_fastqfiles.txt"
     shell:
         "cd {params.out} && shopt -s globstar; ls -d ** | grep '.fastq.gz' | grep -v 'Undetermined' | xargs sha256sum >>{output}"
-
-
 
 onsuccess:
     print("Workflow finished without errors")
