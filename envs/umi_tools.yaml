@@ -1,0 +1,12 @@
+name: umi_tools
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/conda-forge
+  - http://conda.repo.test.hhu.de/bioconda
+  - http://conda.repo.test.hhu.de/main
+
+dependencies:
+  - umi_tools=1.1.4
+  - samtools=1.16.1
+  - subread=2.0.3
+  - stringtie

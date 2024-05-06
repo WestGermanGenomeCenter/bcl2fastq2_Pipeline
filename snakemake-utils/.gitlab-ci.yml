@@ -1,0 +1,19 @@
+stages:
+  - deploy
+
+deploy-hpc:
+  image: debian
+  stage: deploy
+  before_script:
+    - apt update
+    - apt install -y rsync ssh
+    - echo $HPC_HOST_KEY > /etc/ssh/ssh_known_hosts
+    - chmod 0600 $ED25519
+  script:
+    - pwd
+    - rsync -aice "ssh -i $ED25519" /builds/hpc/snakemake-utils/ luros101@storage.hpc.rz.uni-duesseldorf.de:bin/
+  variables:
+    HPC_HOST_KEY: |
+      storage.hpc.rz.uni-duesseldorf.de,134.99.18.121 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPD+X8LOM5Q6IYRmgLmCVx7KJB0iecdHag9QirIMBxX0zEKAPmSx18t0bzGpeyEHs83zrvEavnhpgtwgPt49dIo=
+      134.99.18.122 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPD+X8LOM5Q6IYRmgLmCVx7KJB0iecdHag9QirIMBxX0zEKAPmSx18t0bzGpeyEHs83zrvEavnhpgtwgPt49dIo=
+  interruptible: false

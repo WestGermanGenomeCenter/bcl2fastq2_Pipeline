@@ -1,0 +1,351 @@
+{
+    "__default__" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "default.{rule}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/{rule}.{jobid}.errors",
+      "output" : "clusterLogs/{rule}.{jobid}.output"
+    },
+    "multiqc" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "multiqc.{jobid}",
+      "time" : "0:29:59",
+      "mem" : "4GB",
+      "error" : "clusterLogs/multiqc.{jobid}.errors",
+      "output" : "clusterLogs/multiqc.{jobid}.output"
+    },
+
+    "prevent_revcomp" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "prevent_revcomp.{jobid}",
+      "time" : "0:00:59",
+      "mem" : "1GB",
+      "error" : "clusterLogs/prevent_revcomp.{jobid}.errors",
+      "output" : "clusterLogs/prevent_revcomp.{jobid}.output"
+    },
+    "multiqc_raw" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "multiqc_raw.{jobid}",
+      "time" : "0:19:59",
+      "mem" : "1GB",
+      "error" : "clusterLogs/multiqc_raw.{jobid}.errors",
+      "output" : "clusterLogs/multiqc_raw.{jobid}.output"
+    },
+    "cutadapt" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "cutadapt.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/cutadapt.{jobid}.errors",
+      "output" : "clusterLogs/cutadapt.{jobid}.output"
+    },
+    "stringtie" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "stringtie.{jobid}",
+      "time" : "0:19:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/stringtie.{jobid}.errors",
+      "output" : "clusterLogs/stringtie.{jobid}.output"
+    },
+    
+    "kat_hist" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "kat_hist.{jobid}",
+      "time" : "01:39:59",
+      "mem" : "24GB",
+      "error" : "clusterLogs/kat_hist.{jobid}.errors",
+      "output" : "clusterLogs/kat_hist.{jobid}.output"
+    },
+    
+    "blast" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "blast.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "32GB",
+      "error" : "clusterLogs/blast.{jobid}.errors",
+      "output" : "clusterLogs/blast.{jobid}.output"
+    },
+    
+    "samtools" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "samtools.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/samtools.{jobid}.errors",
+      "output" : "clusterLogs/samtools.{jobid}.output"
+    },  
+    
+    "preseq" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "preseq.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/preseq.{jobid}.errors",
+      "output" : "clusterLogs/preseq.{jobid}.output"
+    },  
+
+    "Qualimap" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "qualimap.{jobid}",
+      "time" : "0:29:59",
+      "mem" : "16GB",
+      "error" : "clusterLogs/qualimap.{jobid}.errors",
+      "output" : "clusterLogs/qualimap.{jobid}.output"
+    },
+                                                  
+    "bcl2fastq2" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "demux.{jobid}",
+      "time" : "1:59:59",
+      "mem" : "64GB",
+      "error" : "clusterLogs/bcl2fastq2.{jobid}.errors",
+      "output" : "clusterLogs/bcl2fastq2.{jobid}.output"
+    },
+
+
+    "interop_plots" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "interop.{jobid}",
+      "time" : "00:19:59",
+      "mem" : "4GB",
+      "error" : "clusterLogs/interop_plots.{jobid}.errors",
+      "output" : "clusterLogs/interop_plots.{jobid}.output"
+    },
+                                                      
+
+
+    "featurecounts" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "featurecounts.{jobid}",
+      "time" : "0:12:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/featurecounts.{jobid}.errors",
+      "output" : "clusterLogs/featurecounts.{jobid}.output"
+    },
+    
+    "umi_dedup" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "umi_dedup.{jobid}",
+      "time" : "7:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/umi_dedup.{jobid}.errors",
+      "output" : "clusterLogs/umi_dedup.{jobid}.output"
+    },
+
+    "kraken2" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "kraken2.{jobid}",
+      "time" : "00:32:59",
+      "mem" : "178GB",
+      "error" : "clusterLogs/kraken2.{jobid}.errors",
+      "output" : "clusterLogs/kraken2.{jobid}.output"
+    },
+
+    "FastQC" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "fastqc.{jobid}",
+      "time" : "00:44:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/FastQC.{jobid}.errors",
+      "output" : "clusterLogs/FastQC.{jobid}.output"
+    },
+    "FastQC_untrimmed" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "fastqc_raw.{jobid}",
+      "time" : "00:44:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/FastQC_untrimmed.{jobid}.errors",
+      "output" : "clusterLogs/FastQC_untrimmed.{jobid}.output"
+    },    
+    "transfer_files" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "transfer.{jobid}",
+      "time" : "00:32:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/transfer.{jobid}.errors",
+      "output" : "clusterLogs/transfer.{jobid}.output"
+    },
+    
+    "umi_extract" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "umi_extract.{jobid}",
+      "time" : "1:59:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/umi_extract.{jobid}.errors",
+      "output" : "clusterLogs/umi_extract.{jobid}.output"
+    },
+    "align" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "star.{jobid}",
+      "time" : "3:59:59",
+      "mem" : "40GB",
+      "error" : "clusterLogs/STAR.{jobid}.errors",
+      "output" : "clusterLogs/STAR.{jobid}.output"
+    },
+    "rseqc_gtf2bed" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "gtf2bed.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_gtf2bed.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_gtf2bed.{jobid}.output"
+    },
+    "rseqc_readdis" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "readdis.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_readdis.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_readdis.{jobid}.output"
+    },
+    "rseqc_junction_saturation" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "junc_sat.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_junction_saturation.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_junction_saturation.{jobid}.output"
+    },
+    "rseqc_junction_annotation" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "junc_annot.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_junction_annotation.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_junction_annotation.{jobid}.output"
+    },
+    "rseqc_innerdis" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "innerdis.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_innerdis.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_innerdis.{jobid}.output"
+    },
+    "rseqc_infer" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "infer_ex.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_infer.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_infer.{jobid}.output"
+    },
+    "rseqc_readdup" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "readdup.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "30GB",
+      "error" : "clusterLogs/rseqc_readdup.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_readdup.{jobid}.output"
+    },
+    "rseqc_stat" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "rseqc_stat.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/rseqc_stat.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_stat.{jobid}.output"
+    },
+    "rseqc_readgc" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "read_gc.{jobid}",
+      "time" : "0:59:59",
+      "mem" : "4GB",
+      "error" : "clusterLogs/rseqc_readgc.{jobid}.errors",
+      "output" : "clusterLogs/rseqc_readgc.{jobid}.output"
+    }
+
+
+    
+}

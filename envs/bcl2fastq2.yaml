@@ -1,0 +1,12 @@
+name: bcl2fastq2
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/bih-cubi
+  - http://conda.repo.test.hhu.de/bioconda
+  - http://conda.repo.test.hhu.de/main
+  - http://conda.repo.test.hhu.de/conda-forge
+ 
+dependencies:
+  - libgcc=7.2.0
+  - zlib=1.2.13
+  - bcl2fastq2=2.20.0.422
