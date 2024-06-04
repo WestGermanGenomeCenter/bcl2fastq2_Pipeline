@@ -17,6 +17,12 @@ samplesheet = config["bcl2fastq"]["SampleSheet"]
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 fastqre   = re.compile(r'\.fastq.gz$')
 
+include: "qc.smk"
+include: "qc_pe.smk"
+include: "pe_processing.smk"
+include: "common.smk"
+
+
 def validateBefore(outputfolder):
     success = validateSamplesheet(samplesheet)
     outputfolder = validateOutput(outputfolder)
@@ -41,6 +47,8 @@ def getOutput():
         all.extend(expand("{out}/interop_plots/interop_plots_done.flag",out=outputfolder))
     if config["prevent_revcomp"]["prevent_revcomp_active"]:
         all.extend(expand("{out}/revcomp_prevented.flag",out=outputfolder))
+    if config["skip_demux"]["skip_demux_active"]:
+        all.extend(expand("{out}/skipped_demuxing.flag",out=outputfolder))
 # env_file=config["bcl2fastq"]["OutputFolder"]+"/"+projectNum+"_software_environment.tsv"
     if not validRun:
         all = list()
@@ -75,53 +83,81 @@ rule prevent_revcomp:
         touch {output}
         """
 
-rule bcl2fastq2:
-    input:
-        input = config["bcl2fastq"]["SampleSheet"]
-    params:
-        barcode_mismatches = config["bcl2fastq"]["barcode_mismatch"],
-        threads = config["bcl2fastq"]["threads"],
-        infolder = getParentDir,
-        additionalOptions=[" "+config["bcl2fastq"]["options"],""][len(config["bcl2fastq"]["options"])>0],
-        # add param for bcl convert location
-        bcl_convert_path = config["bcl2fastq"]["bcl_convert_path"],
-        out = config["bcl2fastq"]["OutputFolder"],
-        outfastqs = config["bcl2fastq"]["OutputFolder"] + "/*.fastq.gz", # we want to exclude the undetermined maybe here, maybe after the multiqc
-        output_dir = config["bcl2fastq"]["OutputFolder"],
-        undetermined = config["bcl2fastq"]["OutputFolder"]  + "/untrimmed_fastq/" + "Undetermined*.fastq.gz",
-        out_fastqs_dir = config["bcl2fastq"]["OutputFolder"] + "/untrimmed_fastq/",
-        Logs_path= config["bcl2fastq"]["OutputFolder"] + "/Logs",
-        bcl_log_path=config["bcl2fastq"]["OutputFolder"] + "/logs/bcl_convert_logs"
+if not config["skip_demux"]["skip_demux_active"]:
 
-    log:
-        config["bcl2fastq"]["OutputFolder"]+"/logs/e_bcl.log"
-    output:
-        bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv"
-    threads: config["bcl2fastq"]["threads"]
-    message:
-        "Running bcl convert"
-    envmodules:
-        config["bcl2fastq"]["bcl2fastq2_version"]
-        # change the cmd params for bcl convert
-        # then make a new runPipeline.sh with a -n option
-        # or make a config params to switch between bcl convert and bcl2fastq?????
-        # barcode mismatches no longer part of command line arguments, now part of the samplesheet
-    shell:
-        """
-        mkdir -p {params.out}
-        chmod ago+rwx -R {params.out}
-        {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --no-lane-splitting true --output-directory {params.output_dir} --force --bcl-num-decompression-threads {params.threads} --bcl-num-conversion-threads {params.threads} --bcl-num-compression-threads {params.threads} --bcl-num-parallel-tiles {params.threads}
-        cp {input[0]} {params.out}
-        mkdir -p {params.output_dir} && mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir}
-        mv {params.undetermined} {params.output_dir}
-        chmod 775 -R {params.output_dir}
-        mv {params.Logs_path} {params.bcl_log_path}
-        
-        """
+    rule bcl2fastq2:
+        input:
+            input = config["bcl2fastq"]["SampleSheet"]
+        params:
+            barcode_mismatches = config["bcl2fastq"]["barcode_mismatch"],
+            threads = config["bcl2fastq"]["threads"],
+            infolder = getParentDir,
+            additionalOptions=[" "+config["bcl2fastq"]["options"],""][len(config["bcl2fastq"]["options"])>0],
+            # add param for bcl convert location
+            bcl_convert_path = config["bcl2fastq"]["bcl_convert_path"],
+            out = config["bcl2fastq"]["OutputFolder"],
+            outfastqs = config["bcl2fastq"]["OutputFolder"] + "/*.fastq.gz", # we want to exclude the undetermined maybe here, maybe after the multiqc
+            output_dir = config["bcl2fastq"]["OutputFolder"],
+            undetermined = config["bcl2fastq"]["OutputFolder"]  + "/untrimmed_fastq/" + "Undetermined*.fastq.gz",
+            out_fastqs_dir = config["bcl2fastq"]["OutputFolder"] + "/untrimmed_fastq/",
+            Logs_path= config["bcl2fastq"]["OutputFolder"] + "/Logs",
+            bcl_log_path=config["bcl2fastq"]["OutputFolder"] + "/logs/bcl_convert_logs"
+
+        log:
+            config["bcl2fastq"]["OutputFolder"]+"/logs/e_bcl.log"
+        output:
+            bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv"
+        threads: config["bcl2fastq"]["threads"]
+        message:
+            "Running bcl convert"
+        envmodules:
+            config["bcl2fastq"]["bcl2fastq2_version"]
+            # change the cmd params for bcl convert
+            # then make a new runPipeline.sh with a -n option
+            # or make a config params to switch between bcl convert and bcl2fastq?????
+            # barcode mismatches no longer part of command line arguments, now part of the samplesheet
+        shell:
+            """
+            mkdir -p {params.out}
+            chmod ago+rwx -R {params.out}
+            {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --no-lane-splitting true --output-directory {params.output_dir} --force --bcl-num-decompression-threads {params.threads} --bcl-num-conversion-threads {params.threads} --bcl-num-compression-threads {params.threads} --bcl-num-parallel-tiles {params.threads}
+            cp {input[0]} {params.out}
+            mkdir -p {params.output_dir} && mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir}
+            mv {params.undetermined} {params.output_dir}
+            chmod 775 -R {params.output_dir}
+            mv {params.Logs_path} {params.bcl_log_path}
+
+            """
+
+if config["skip_demux"]["skip_demux_active"]:
+
+    rule skip_demux:
+        input:
+        params:
+            dir_w_fastq=config["skip_demux"]["fastq_folder"],
+            out_folder=outputfolder,
+            reports_dir=outputfolder +"/Reports",
+            reports_file=outputfolder +"/Reports/Demultiplex_Stats.csv",
+            untrimmed_fastq_folder=outputfolder +"/untrimmed_fastq/",
+        output:
+            flagfile=outputfolder+"/skipped_demuxing.flag",
+        shell:
+            """
+            mkdir -p {params.out_folder}
+            mkdir -p {params.reports_dir}
+            mkdir -p {params.untrimmed_fastq_folder}
+            touch {params.reports_file}
+            mv {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
+            touch {output.flagfile}
+            """
+
+
+
 
 rule create_fastq_list:
     input:
-        rules.bcl2fastq2.output
+        rules.bcl2fastq2.output if not config["skip_demux"]["skip_demux_active"] else rules.skip_demux.output
+
     params:
         #out=config["bcl2fastq"]["OutputFolder"]
         out_fastqs_dir = config["bcl2fastq"]["OutputFolder"] + "/untrimmed_fastq/"
@@ -155,7 +191,7 @@ rule copy_software_env:
 
 rule interop_plots:
     input:
-        bcl2fastq2Output = config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv"
+        rules.bcl2fastq2.output if not config["skip_demux"]["skip_demux_active"] else rules.skip_demux.output
     output:
         done_flag=outputfolder+"/interop_plots/interop_plots_done.flag"
     params:

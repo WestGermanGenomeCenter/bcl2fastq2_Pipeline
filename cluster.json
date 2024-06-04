@@ -55,6 +55,18 @@
       "error" : "clusterLogs/cutadapt.{jobid}.errors",
       "output" : "clusterLogs/cutadapt.{jobid}.output"
     },
+
+    "cutadapt_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "cutadapt_pe.{jobid}",
+      "time" : "1:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/cutadapt_pe.{jobid}.errors",
+      "output" : "clusterLogs/cutadapt_pe.{jobid}.output"
+    },
     "stringtie" :
     {
       "account" : "HiSeq3000",
@@ -66,17 +78,41 @@
       "error" : "clusterLogs/stringtie.{jobid}.errors",
       "output" : "clusterLogs/stringtie.{jobid}.output"
     },
-    
-    "kat_hist" :
+
+    "jellyfish" :
     {
       "account" : "HiSeq3000",
       "queue" : "workq",
       "nodes" : 1,
-      "name" : "kat_hist.{jobid}",
-      "time" : "01:39:59",
+      "name" : "jellyfish.{jobid}",
+      "time" : "0:49:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/jellyfish.{jobid}.errors",
+      "output" : "clusterLogs/jellyfish.{jobid}.output"
+    },
+
+    "biobloom" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "biobloom.{jobid}",
+      "time" : "2:49:59",
+      "mem" : "92GB",
+      "error" : "clusterLogs/biobloom.{jobid}.errors",
+      "output" : "clusterLogs/biobloom.{jobid}.output"
+    },
+
+    "diamond" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "diamond.{jobid}",
+      "time" : "01:49:59",
       "mem" : "24GB",
-      "error" : "clusterLogs/kat_hist.{jobid}.errors",
-      "output" : "clusterLogs/kat_hist.{jobid}.output"
+      "error" : "clusterLogs/diamond.{jobid}.errors",
+      "output" : "clusterLogs/diamond.{jobid}.output"
     },
     
     "blast" :
@@ -201,6 +237,19 @@
       "error" : "clusterLogs/FastQC.{jobid}.errors",
       "output" : "clusterLogs/FastQC.{jobid}.output"
     },
+
+    "FastQC_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "fastqc_pe.{jobid}",
+      "time" : "00:44:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/FastQC_pe.{jobid}.errors",
+      "output" : "clusterLogs/FastQC_pe.{jobid}.output"
+    },    
+
     "FastQC_untrimmed" :
     {
       "account" : "HiSeq3000",
@@ -218,7 +267,7 @@
       "queue" : "workq",
       "nodes" : 1,
       "name" : "transfer.{jobid}",
-      "time" : "00:32:59",
+      "time" : "72:32:59",
       "mem" : "8GB",
       "error" : "clusterLogs/transfer.{jobid}.errors",
       "output" : "clusterLogs/transfer.{jobid}.output"
@@ -235,6 +284,19 @@
       "error" : "clusterLogs/umi_extract.{jobid}.errors",
       "output" : "clusterLogs/umi_extract.{jobid}.output"
     },
+
+    "umi_extract_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "umi_extract_pe.{jobid}",
+      "time" : "1:59:59",
+      "mem" : "12GB",
+      "error" : "clusterLogs/umi_extract_pe.{jobid}.errors",
+      "output" : "clusterLogs/umi_extract_pe.{jobid}.output"
+    },
+
     "align" :
     {
       "account" : "HiSeq3000",
@@ -256,6 +318,17 @@
       "mem" : "8GB",
       "error" : "clusterLogs/rseqc_gtf2bed.{jobid}.errors",
       "output" : "clusterLogs/rseqc_gtf2bed.{jobid}.output"
+    },
+    "align_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "star_pe.{jobid}",
+      "time" : "3:59:59",
+      "mem" : "40GB",
+      "error" : "clusterLogs/STAR_pe.{jobid}.errors",
+      "output" : "clusterLogs/STAR_pe.{jobid}.output"
     },
     "rseqc_readdis" :
     {

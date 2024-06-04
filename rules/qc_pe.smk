@@ -9,37 +9,14 @@ from helper import validateSamplesheet, validateOutput, validateProjectNum
 configfile: "config.yaml"
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 
-#include: "qc_pe.smk"
+#include: "qc.smk"
 #include: "pe_processing.smk"
 #include: "common.smk"
 
 
 
-rule rseqc_gtf2bed:
-    input:
-        config["rseqc"]["gtf_file"],
-    output:
-        bed=outputfolder+"/qc/rseqc/annotation.bed",
-        db=temp("results/qc/rseqc/annotation.db")
-    params:
-    	qc_dir=outputfolder+"/qc",
-    	rseqc_dir=outputfolder+"/qc/rseqc",
-    log:
-        outputfolder+"/logs/rseqc_gtf2bed.log",
-    conda:
-        p+"/envs/gffutils.yaml"
-    script:
-        "../scripts/gtf2bed.py"
-#    shell:
-#    	"""
-#    	mkdir -p {params.qc_dir}
-#    	mkdir -p {params.rseqc_dir}
-#    	convert2bed -i gtf < {input} > {output.bed}
-#    	python scripts/gtf2bed.py {input} {output.bed} 2>{log}
-#    	#convert2bed -i gtf  < {input} >{output.bed} 2>{log}
-#    	"""
+if isSingleEnd() == False:
 
-if isSingleEnd() == True:
     rule rseqc_junction_annotation:
         input:
             bam=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam",
@@ -51,7 +28,8 @@ if isSingleEnd() == True:
             outputfolder+"/logs/rseqc/rseqc_junction_annotation/{file}.log"
         params:
             extra=r"-q 255",  # STAR uses 255 as a score for unique mappers
-            prefix=lambda w, output: output[0].replace(".junction.bed", ""),
+            prefix=outputfolder+"/qc/rseqc/{file}.junctionanno"
+            #prefix=lambda w, output: output[0].replace(".junction.bed", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -72,7 +50,8 @@ if isSingleEnd() == True:
             outputfolder+"/logs/rseqc/rseqc_junction_saturation/{file}.log"
         params:
             extra=r"-q 255",
-            prefix=lambda w, output: output[0].replace(".junctionSaturation_plot.pdf", ""),
+            prefix=outputfolder+"/qc/rseqc/{file}.junctionsat",
+            #prefix=lambda w, output: output[0].replace(".junctionSaturation_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -119,7 +98,8 @@ if isSingleEnd() == True:
         log:
             outputfolder+"/logs/rseqc/rseqc_innerdis/{file}.log",
         params:
-            prefix=lambda w, output: output[0].replace(".inner_distance.txt", ""),
+            prefix=outputfolder+"/qc/rseqc/{file}.inner_distance_freq",
+            #prefix=lambda w, output: output[0].replace(".inner_distance.txt", ""),
             nvc_outpre=outputfolder+"/qc/rseqc/{file}_nucleotide_composition_bias",
             tin_prefix=outputfolder+"/qc/rseqc/{file}_tin_.bed",
             genebody_pre=outputfolder+"/qc/rseqc/{file}_genebody_coverage",
@@ -161,7 +141,8 @@ if isSingleEnd() == True:
         log:
             outputfolder+"/logs/rseqc/rseqc_readdup/{file}.log"
         params:
-            prefix=lambda w, output: output[0].replace(".DupRate_plot.pdf", ""),
+            prefix=outputfolder+"/qc/rseqc/{file}.readdup"
+            #prefix=lambda w, output: output[0].replace(".DupRate_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -177,7 +158,8 @@ if isSingleEnd() == True:
         log:
             outputfolder+"/logs/rseqc/rseqc_readgc/{file}.log"
         params:
-            prefix=lambda w, output: output[0].replace(".GC_plot.pdf", ""),
+            prefix=outputfolder+"/qc/rseqc/{file}.readgc"
+            #prefix=lambda w, output: output[0].replace(".GC_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -188,43 +170,43 @@ if isSingleEnd() == True:
         input:
             expand(
                 outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.junctionanno.junction.bed",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.junctionsat.junctionSaturation_plot.pdf",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.infer_experiment.txt",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.stats.txt",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.inner_distance_freq.inner_distance.txt",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.readdistribution.txt",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.readdup.DupRate_plot.pdf",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/qc/rseqc/{file}.readgc.GC_plot.pdf",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
             expand(
                 outputfolder+"/logs/rseqc/rseqc_junction_annotation/{file}.log",
-                file=sample_names,
+                file=getSample_names_post_mapping(),
             ),
     #        expand(outputfolder+"/counts/all.tsv"),
         output:

@@ -1,4 +1,4 @@
-name: kat
+name: jellyfish
 channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/conda-forge
@@ -6,4 +6,5 @@ channels:
   - http://conda.repo.test.hhu.de/main
         
 dependencies:
-  - kat
+  - kmer-jellyfish=2.3.1
+  - gzip

@@ -18,30 +18,10 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 ### include rules ###
 
 include: "qc.smk"
-
-# Get the fastq.gz samples
-sample_names = list()
-if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-    fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs]
-
-# Validate input from config
-def validateBefore(outputfolder):
-    success = validateSamplesheet(samplesheet)
-    outputfolder = validateOutput(outputfolder)
-    return True if success and outputfolder is not None else False
-
-validRun = validateBefore(outputfolder)
-
-
-# Check for projectNum in samplesheet name
-projectNum=validateProjectNum(samplesheet)
-if not projectNum:
-    print("There was no project number to be found in the samplesheet and/or the name of the samplesheet")
-
-
-
+include: "qc_pe.smk"
+include: "pe_processing.smk"
+include: "common.smk"
+#
 # Set expected pipeline output
 def getOutput():
     all = list()
@@ -55,29 +35,28 @@ def getOutput():
     if config["rseqc"]["rseqc_mapping_active"]:
         all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
         all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
-        all.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
-        all.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=sample_names)) # test this 
-        all.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=sample_names)) # test this 
-        # samtools_stats_file=outputfolder + "/samtools/{file}_samtools_stats.stats",
-        #print("getOutput list of files:")
-        #print (all)
+        #all.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
+        all.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) # test this 
+    if config["rseqc"]["qualimap_on"]:
+        all.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output      
+    if config["rseqc"]["stringtie_on"]:      
+        all.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
     if config["rseqc"]["rseqc_modules_active"]:
         all.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder)) # outputfolder+"/qc/rseqc/done.flag"
     if config["umi_tools"]["umi_tools_active"]:
-        for sample in sample_names:
-            all.extend(expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample_names))
-            all.extend(expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=sample_names))
-
-
-#    if config["kmer_spectra"]["kmer_spectra_on"]:
-#        all.extend(expand("{out}/kmer_spectra/{file}_kmer_gcbias.mx.pdf",out=outputfolder,file=sample_names))
-#         _kmer_gcbias.mx.pdf"
+        all.extend(expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample_names))
+        all.extend(expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()))
+    if config["jellyfish"]["jellyfish_active"]:
+        all.extend(expand("{out}/jellyfish/{file}_trimmed_jf.hist",out=outputfolder,file=sample_names))
+        
     if config["blast"]["blast_active"]:
         all.extend(expand("{out}/blast/blast_report_{file}.tsv",out=outputfolder,file=sample_names))
 
     if config["cutadapt"]["cutadapt_active"]:
         all.extend(expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=sample_names))
         all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
+        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))            
+    
 
     if config["kraken2"]["kraken2_active"]:
         all.extend(expand("{out}/kraken2/{file}.report",out=outputfolder,file=sample_names))
@@ -86,8 +65,17 @@ def getOutput():
         all.extend(expand("{out}/transfer/transfer_log.log",out=outputfolder))
     
     if config["preseq"]["preseq_active"]:
-        all.extend(expand("{out}/preseq/{file}_c_curve_out.txt",out=outputfolder,file=sample_names))
+        all.extend(expand("{out}/preseq/{file}_c_curve_out.txt",out=outputfolder,file=getSample_names_post_mapping()))
 
+    if config["biobloom"]["biobloom_active"]:
+        all.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
+
+    if config["diamond"]["diamond_active"]:
+        all.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+
+#         log_file=outputfolder+"/diamond/{file}/diamond.log",
+    print ("test: this is all files that should be created:")
+    print (all)
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -96,91 +84,45 @@ def getOutput():
 
 def getFastQCs(wildcards):
     fastQCs = list()# if we cutadapt, make the list empty, then we only want fastqc from the cutadapt output
-    fastQCs.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
+    fastQCs.extend(expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample_names))
+    #fastQCs.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     if config["rseqc"]["rseqc_mapping_active"]:
-        fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
-        fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=sample_names))
-        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=sample_names)) # test this 
+        #fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
+        fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=getSample_names_post_mapping()))
+        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) # test this 
             #print("sample names from getFastQCs, maybe fixed:")
             #print(sample_names)
+    if config["rseqc"]["qualimap_on"]:
+        fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
     if config["rseqc"]["rseqc_modules_active"]:
         fastQCs.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder)) # outputfolder+"/qc/rseqc/done.flag"
     
     if config["umi_tools"]["umi_tools_active"]:
         fastQCs.extend(expand("{out}/fastqc/{file}.umis-extracted_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     elif config["cutadapt"]["cutadapt_active"]:
-        #relativePath = os.path.dirname(sample)+"/" if "/" in sample else ""
         fastQCs.extend(expand("{out}/fastqc/{file}_trimmed_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
- #   if config["kmer_spectra"]["kmer_spectra_on"]:
- #       for sample in sample_names:
- #           fastQCs.extend(expand("{out}/kmer_spectra/{file}_kmer_gcbias.mx.pdf",out=outputfolder,file=sample_names))
     if config["kraken2"]["kraken2_active"]:
         fastQCs.extend(expand("{out}/kraken2/{file}.report",out=outputfolder,file=sample_names))
     if config["preseq"]["preseq_active"]:
-        fastQCs.extend(expand("{out}/preseq/{file}_c_curve_out.txt",out=outputfolder,file=sample_names))
-
+        fastQCs.extend(expand("{out}/preseq/{file}_c_curve_out.txt",out=outputfolder,file=getSample_names_post_mapping()))
+    if config["jellyfish"]["jellyfish_active"]:
+        fastQCs.extend(expand("{out}/jellyfish/{file}_trimmed_jf.hist",out=outputfolder,file=sample_names))
+    if config["biobloom"]["biobloom_active"]:
+        fastQCs.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
+    if config["diamond"]["diamond_active"]:
+        fastQCs.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
     return fastQCs
 
 
 
 def get_raw_FastQCs(wildcards):
     fastQCs_raw = list()# if we cutadapt, make the list empty, then we only want fastqc from the cutadapt output
+    #relativePath = os.path.dirname(sample)+"/" if "/" in sample else ""
+    #fastQCs_raw.extend(expand("{out}/fastqc/{file}_trimmed_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
+   
     fastQCs_raw.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     return fastQCs_raw
 
-
-def isSingleEnd() -> bool:
-    """
-    Returns wether the fastqs are single-end=True or paired-end=False
-    """
-    R1 = list()
-    R2 = list()
-    for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-        else:
-            R2.append(sample)
-    if len(R1)!=len(R2):
-        return True
-    return False
-
-
-def getSamples(wildcards):
-    
-    if isSingleEnd():
-        
-        for sample in sample_names:
-            if str(wildcards) in sample:
-                if config["umi_tools"]["umi_tools_active"]:
-                    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
-                elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
-                    return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=sample)
-                else:
-                    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample)
-                
-    else:   
-    	sampleName = str(wildcards).split("_R")[0]
-    	R1and2 = list()
-    	for sample in sample_names:
-        	trySplit = sample.split(os.sep)[-1]
-        	if trySplit:
-            		if trySplit.startswith(sampleName):
-                		R1and2.append(sample)
-    	if config["umi_tools"]["umi_tools_active"]:
-        	return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=R1and2)
-    	elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
-            return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=R1and2)
-    	else:
-        	return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=R1and2)
-
-
-def getFastqs(wildcards):
-    samples = getSamples(wildcards)
-    if len(samples)>1:
-        return " ".join(samples)
-    #print ("getFastqs file list:")
-    #print (samples)
-    return samples
 
 localrules: all, gocryptfs
 
@@ -188,6 +130,75 @@ localrules: all, gocryptfs
 rule all:
     input:
         getOutput() if projectNum else ""
+
+
+#get_pe_pairingsheet()
+
+
+
+if isSingleEnd() == True:
+    rule cutadapt:
+        input:
+        # change this to if paired end, only the R1 as input
+            outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+            #fastq_list=get_cutadapt_input_files
+        params:
+            #fastq_input=get_pe_trimming,
+            #input_fastqs=get_cutadapt_input_string,
+            adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
+            otherParams=config["cutadapt"]["other_params"],
+            out=outputfolder,
+            sha_sum_file=outputfolder+"/trimmed/sha256sums_fastqfiles_trimmed.sha256"
+        output:
+            outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+
+        threads: config["cutadapt"]["cutadapt_threads"]
+        log:
+            outputfolder+"/logs/cutadapt/{file}_trimmed.log"
+        message:
+            "Run cutadapt"
+        conda:
+            p+"/envs/cutadapt.yaml"
+        shell:
+            """
+            mkdir -p {params.out}/trimmed
+            cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
+            sha256sum {output} >>{params.sha_sum_file}
+            """
+
+
+    rule align:
+        input:
+            fastqs=getSamples
+        output:
+            bams=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
+            tabs=outputfolder + "/star/{file}_ReadsPerGene.out.tab"
+        wildcard_constraints:
+            file="(.*(?:_).*)"
+        log:
+            outputfolder+"/logs/star/{file}.log"
+        params:
+            # optional parameters
+            extra="--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --sjdbGTFfile {} {}".format(
+                config["rseqc"]["gtf_file"], config["rseqc"]["other_params"]),
+            outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/"+w.file)+"/",
+            prefix = outputfolder + "/star/{file}_",
+            genDir = config["rseqc"]["genomeDir"],
+            qc_dir = outputfolder + "/qc",
+            rseqc_dir = outputfolder+"/qc/rseqc",
+            fastqs=lambda w: getFastqs(w.file),
+
+        threads: config["rseqc"]["STAR_threads"]
+        conda:
+            p+"/envs/STAR.yaml"
+        shell:
+            """
+            mkdir -p {params.qc_dir}
+            mkdir -p {params.rseqc_dir}
+            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
+            chmod ago+rwx -R {output} >> {log} 2>&1
+            """
+
 
 
 rule FastQC_untrimmed:
@@ -221,64 +232,6 @@ rule FastQC_untrimmed:
         mv {params.html} {output.html}
         """
 
-
-rule cutadapt:
-    input:
-        outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
-
-    params:
-        adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
-        otherParams=config["cutadapt"]["other_params"],
-        out=outputfolder,
-        sha_sum_file=outputfolder+"/trimmed/sha256sums_fastqfiles_trimmed.sha256"
-    output:
-        outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-    threads: config["cutadapt"]["cutadapt_threads"]
-    log:
-        outputfolder+"/logs/cutadapt/{file}_trimmed.log"
-    message:
-        "Run cutadapt"
-    conda:
-        p+"/envs/cutadapt.yaml"
-    shell:
-        """
-        mkdir -p {params.out}/trimmed
-        cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
-        sha256sum {output} >>{params.sha_sum_file}
-        """
-          
-rule align:
-    input:
-        fastqs=getSamples
-    output:
-        bams=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
-        tabs=outputfolder + "/star/{file}_ReadsPerGene.out.tab"
-    wildcard_constraints:
-        file="(.*(?:_).*)"
-    log:
-        outputfolder+"/logs/star/{file}.log"
-    params:
-        # optional parameters
-        extra="--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --sjdbGTFfile {} {}".format(
-            config["rseqc"]["gtf_file"], config["rseqc"]["other_params"]),
-        outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/"+w.file)+"/",
-        prefix = outputfolder + "/star/{file}_",
-        genDir = config["rseqc"]["genomeDir"],
-        qc_dir = outputfolder + "/qc",
-        rseqc_dir = outputfolder+"/qc/rseqc",
-        fastqs=lambda w: getFastqs(w.file),
-
-        
-    threads: config["rseqc"]["STAR_threads"]
-    conda:
-        p+"/envs/STAR.yaml"
-    shell:
-        """
-        mkdir -p {params.qc_dir}
-        mkdir -p {params.rseqc_dir}
-        STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
-        chmod ago+rwx -R {output} >> {log} 2>&1
-        """
 
 rule samtools:
     input:
@@ -377,34 +330,38 @@ rule stringtie:
         stringtie {input.bams} -g {params.gtf} -o {output} >> {log} 2>&1
         chmod ago+rwx -R {output} >> {log} 2>&1
         """
+if isSingleEnd() == True:
 
-rule FastQC:
-    input:  # need to test this if this works, also the input fun of kraken rule 
-        outputfolder + "/umi_extract/{file}.umis-extracted.fastq.gz"  if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-    params:
-        #path=getPath,
-        out=outputfolder,
-        fastp_report=outputfolder+"/fastqc/{file}_after_filtering_fastp.html",
-        fastp_json= outputfolder+"/fastqc/{file}_after_filtering_fastp.json"
+    rule FastQC:
+        input:  # need to test this if this works, also the input fun of kraken rule 
+            outputfolder + "/umi_extract/{file}.umis-extracted.fastq.gz"  if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+        params:
+            #path=getPath,
+            out=outputfolder,
+            fastp_report=outputfolder+"/fastqc/{file}_after_filtering_fastp.html",
+            fastp_json= outputfolder+"/fastqc/{file}_after_filtering_fastp.json"
 
-    output:
-        outputfolder+"/fastqc/{file}_trimmed_fastqc.html" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/fastqc/{file}.umis-extracted_fastqc.html",
-        outputfolder+"/fastqc/{file}_trimmed_fastqc.zip" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/fastqc/{file}.umis-extracted_fastqc.zip",
+        output:
+            outputfolder+"/fastqc/{file}_trimmed_fastqc.html" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/fastqc/{file}.umis-extracted_fastqc.html",
+            outputfolder+"/fastqc/{file}_trimmed_fastqc.zip" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/fastqc/{file}.umis-extracted_fastqc.zip",
 
-    threads: config["others"]["fastQC_threads"]
-    log:
-        outputfolder+"/logs/fastqc/FastQC_{file}.log"
-    conda:
-        p+"/envs/fastqc.yaml"
-    message:
-        "Run FastQC"
-    shell:
-        """
-        mkdir -p {params.out}/fastqc/ >> {log} 2>&1
-        fastqc -q --threads {threads} {input} -o {params.out}/fastqc/ >> {log} 2>&1
-        fastp -i {input} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
-        chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
-        """
+        threads: config["others"]["fastQC_threads"]
+        log:
+            outputfolder+"/logs/fastqc/FastQC_{file}.log"
+        conda:
+            p+"/envs/fastqc.yaml"
+        message:
+            "Run FastQC"
+        shell:
+            """
+            mkdir -p {params.out}/fastqc/ >> {log} 2>&1
+            fastqc -q --threads {threads} {input} -o {params.out}/fastqc/ >> {log} 2>&1
+            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
+            chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
+            """
+
+
+
 
 if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
     rule umi_extract:
@@ -461,10 +418,10 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
 
 rule featurecounts:
     input:
-        expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=sample_names) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=sample_names)
+        expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping())
     params:
         gtf=config["rseqc"]["gtf_file"],
-        stranded=config["umi_tools"]["stranded"],
+        stranded=config["rseqc"]["stranded"],
         outdir=outputfolder+"/counts",
     threads:
         config["umi_tools"]["threads"]
@@ -475,7 +432,7 @@ rule featurecounts:
     shell:
         """
         mkdir -p {params.outdir}
-        featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {threads} -g gene_id -s {params.stranded}
+        featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {threads} -g gene_id {params.stranded}
         chmod ago+rwx -R {params.outdir}
         """
 
@@ -534,6 +491,87 @@ rule blast:
         blastn -db {params.blast_db} -query {params.blast_subsampled_fasta} -outfmt 7 -max_target_seqs 5 -num_threads {threads} >{output.blast_out}  2>{log}
         chmod -R 755 {params.blast_folder}
         bash {params.script_dir}/filter_blast.sh {output} {params.summary_file}  2>{log}       
+        """
+
+rule jellyfish:
+    input:
+        outputfolder+"/trimmed/{file}_trimmed.fastq.gz" if config["cutadapt"]["cutadapt_active"] else outputfolder+"/umis_extract/{file}.umis-extracted.fastq.gz" # only possible if cutadapt and/or umi_tools are active 
+    output:
+        hist_file=outputfolder+"/jellyfish/{file}_trimmed_jf.hist",
+        fastq=temp(outputfolder+"/jellyfish/{file}.fastq")
+    threads:
+        config["jellyfish"]["jellyfish_threads"]
+    params:
+        out_folder=outputfolder+"/jellyfish/",
+        mer_countsfile=outputfolder+"/jellyfish/{file}_kmercounts.jf",
+        stats_file=outputfolder+"/jellyfish/{file}_kmer_stats.txt",
+    log:
+        outputfolder+"/jellyfish/{file}.jellyfish.log"
+    conda:
+        p+"/envs/jellyfish.yaml"
+    shell:
+        """
+        mkdir -p {params.out_folder} 2>{log}
+        gunzip -c {input} >{output.fastq} 2>{log}
+        jellyfish count -m 21 -t {threads} -s 100M  -o {params.mer_countsfile} -C {output.fastq} 2>{log}
+        jellyfish histo -o {output.hist_file} -f {params.mer_countsfile} 2>{log}
+        jellyfish stats {params.mer_countsfile} >{params.stats_file}
+        """
+
+
+
+rule biobloom:
+    input:
+        outputfolder+"/trimmed/{file}_trimmed.fastq.gz" if config["cutadapt"]["cutadapt_active"] else outputfolder+"/umis_extract/{file}.umis-extracted.fastq.gz" # only possible if cutadapt and/or umi_tools are active 
+
+    params:
+        biobloom_folder=outputfolder+"/biobloom",
+        fastq_file=temp(outputfolder+"/biobloom/{file}.fastq"),
+        log_folder=outputfolder+"/logs/biobloom",
+        filter_string=lambda wc:config["biobloom"]["biobloom_filters"],
+        biobloom_filter_dir=config["biobloom"]["biobloom_filter_dir"],
+        output_prefix=outputfolder+"/biobloom/biobloom_results_{file}",
+    output:
+        biobloom_summary=outputfolder+"/biobloom/biobloom_results_{file}_summary.tsv",
+    log:
+        outputfolder+"/logs/biobloom/biobloom_log_{file}.log"
+    threads: config["biobloom"]["biobloom_threads"]
+    conda:
+        p+"/envs/biobloom.yaml"
+    shell:
+        """
+        mkdir -p {params.biobloom_folder}
+        mkdir -p {params.log_folder}
+        gunzip {input} -c >{params.fastq_file} 2>{log}
+        cd {params.biobloom_filter_dir}
+        nice biobloomcategorizer -f {params.filter_string} {params.fastq_file} -t {threads} -p {params.output_prefix} 2>{log}
+  
+        """
+    
+rule diamond:
+    input:
+        outputfolder+"/trimmed/{file}_trimmed.fastq.gz" if config["cutadapt"]["cutadapt_active"] else outputfolder+"/umis_extract/{file}.umis-extracted.fastq.gz" # only possible if cutadapt and/or umi_tools are active 
+    output:
+        log_file=outputfolder+"/diamond/{file}/diamond.log",
+    threads:
+        config["diamond"]["diamond_threads"]
+    params:
+        out_folder=outputfolder+"/diamond/",
+        out_sample_folder=outputfolder+"/diamond/{file}", # run diamond here
+        diamond_ref_file=config["diamond"]["diamond_ref_file"],
+        textfile=outputfolder+"/diamond/{file}/{file}_diamond_output.txt",
+        diamond_summary_file=outputfolder+"/diamond/{file}/{file}_diamond_output_summary.txt",
+    log:
+        outputfolder+"/diamond/{file}.diamond.log"
+    conda:
+        p+"/envs/diamond.yaml"
+    shell:
+        """
+        mkdir -p {params.out_folder} 2>{log}
+        mkdir -p {params.out_sample_folder}
+        cd {params.out_sample_folder}
+        diamond blastx --threads {threads} --db {params.diamond_ref_file} --out {params.textfile} --query {input} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log
+        cat {params.textfile} |sort |uniq -c | sort -n | tac >{params.diamond_summary_file}
         """
 
 
@@ -638,9 +676,3 @@ onerror:
 
 onstart:
     print("Setting up and running pipeline")
-#
-#
-# Future directions:
-# jellyfish: https://bioinformatics.uconn.edu/genome-size-estimation-tutorial/
-# sortmerna: https://github.com/sortmerna/sortmerna/tree/master/data/rRNA_databases
-# seqwho: https://daehwankimlab.github.io/seqwho/

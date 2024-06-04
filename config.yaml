@@ -5,23 +5,36 @@
 bcl2fastq:
   barcode_mismatch: 1
   SampleSheet:
-   "/gpfs/project/projects/bmfz_gtl/devices/illumina/nextseq2000/230620_VL00286_123_AACKTWWM5/895_SampleSheet_templateV2_NextSeq_Lexogen3PrimeAssay_Forward.csv"
+    "/gpfs/project/projects/bmfz_gtl/projects/1049_exom/SampleSheet_1049_exom.csv"
   OutputFolder:
-   "/gpfs/project/projects/bmfz_gtl/projects/895_diagnosis_tw"
+    "/gpfs/project/projects/bmfz_gtl/projects/1049_exom"  
   other_params: "" # if umis are part of the barcode/adapter then the bcl-convert options are used. umi_tools needs to be inactive. 
   threads: 12
   options: ""
   bcl_convert_path: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts/bcl-convert" # bcl-convert Version 00.000.000.4.2.7 
   bcl2fastq2_version: "2.20.0.422" # deprecated, for the old pipeline
 
-# for some reason, bcl convert thinks that making the read 3 always the reverse complement from the sequence in the samplesheet makes sense. 
-# we think differently, so there is a helper function that changes the settings in the RunInfo.xml. Keep this always active else you know better!
+# if you did already demultiplex, activate this here.
+# outputfolder MUST be the same as the fastq_folder below, 
+# create a new project folder in bmfz_gtl/your_project,
+# put all .fastq.gz files into that folder
+# change outputfolder above and the fastq_folder below accordingly, 
+# then start the pipeline as usual.
+skip_demux:
+  skip_demux_active: True
+  fastq_folder: "/gpfs/project/projects/bmfz_gtl/projects/1049_exom"
+
+
+
+
+# for some reason, in some cases, bcl convert thinks that making the read 3 the reverse complement from the sequence in the samplesheet makes sense. 
+# we think differently, so there is a helper function that changes the settings in the RunInfo.xml. Keep this always inactive else you know better!
 prevent_revcomp:
     prevent_revcomp_active: False
 
 # this adds a few plots after each demultiplexing that usually can just be seen in SAV. 
 interop_plots:
-    interop_plots_active: True
+    interop_plots_active: False
     interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/bin"
     interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
       
@@ -34,8 +47,8 @@ cutadapt:
     - AGATCGGAAGAGCACACGTCTGAACTCCAGTCA    
     - CTGTCTCTTATACACATCT
   adapter_type: 
-    - a
-    - g
+    - b
+    - b
   other_params: "--minimum-length 25 --quality-cutoff 5" # very conservative, should work with any assay.
 
 # rseqc is a collection of qc tools for mapped reads, dependent on reference genome quality. tools that if rseqc_active are run: star, rseqc, qualimap, stringtie, featureCounts and umi_tools dedup if umi_tools are enabled if enabled, this automatically turns on mapping with star. be sure to use the correct reference genome! 
@@ -50,8 +63,10 @@ rseqc: # for this to work, cutadapt needs to be active
   strandedness: True 
   STAR_threads: 12
   other_params: ""
-  rseqc_modules_active: False
-
+  rseqc_modules_active: True
+  stranded: "-s 1" # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1"
+  qualimap_on: True # only use this if you have an ensembl .gtf file
+  stringtie_on: True
 # preseq is a tool to estimate sequencing saturation
 # this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
 preseq:
@@ -60,32 +75,50 @@ preseq:
 # umi_tools is used in two steps to first move the umis from a defined position of the trimmed read to the read header inside the .fastq.gz files
 # and then after mapping with star deduplicate the mapped reads based on position and umi in the .bam files 
 umi_tools: # for this to work, cutadapt needs to be active 
-  umi_tools_active: True
+  umi_tools_active: False
  # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read
   pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! : '"(?P<umi_1>.{6})(?P<discard_1>TATA).*"'
   extended_name: "umiextr"
   umi_tools_dedup_bam: True
   threads: 12
-  stranded: 1 # featurecounts parameter -s 
 
 # blast is used as a quick proxy for sample species estimation. only a small subset are blasted (blastn ) versus a reference-only database that is quite small only for trimmed reads as the adapter can confuse its results.
 # outputs a table and a summary file. also subsamples reads 1000-2000 to speedup the process for each input file. 
 blast: # for this to work, cutadapt needs to be active
     blast_active: True
-    blast_db: "/gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa" # also possible: /gpfs/project/projects/bmfz_gtl/software/blast/nt /gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa much smaller, but annotated
+    blast_db: "/gpfs/project/projects/bmfz_gtl/software/blast/bigger_blastdb/bmfz_blast_big_db" # also possible: /gpfs/project/projects/bmfz_gtl/software/blast/nt /gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa much smaller, but annotated
     blast_threads: 1
     blast_script_dir: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
 
 # kraken2 is used to identify the species sequenced. helpful for contamination detection.based on kmers. using a shared database! 
 # since it needs 180gb of ram, these jobs are slow to start on the hpc
 kraken2:
-  kraken2_active: False
+  kraken2_active: True
   kraken2_database: "/gpfs/project/databases/Kraken2-2022-09-28/kraken_db_plus" # also possible: /gpfs/project/databases/Kraken2_refseq+hfmv # also possible: /gpfs/project/projects/bmfz_gtl/software/Kraken
   kraken2_threads: 2
 
+# jellyfish is used to compute 21-mers for DNA samples. This can be used to check quality and ploidity of samples.
+# use for whole-genome sequencing assays
+jellyfish:
+  jellyfish_active: True
+  jellyfish_threads: 10
 
-  
-# this file needs to be manually updated with each change, a file to document the software used for each run. this config.yaml file will also be copied to the project folder for each run.
+# biobloom is for taxonomic classification of reads based on k-mers. needs one new biobloom filter for each species screened for.
+# use only if kraken and blast are non-overlapping
+biobloom:
+  biobloom_active: True
+  biobloom_threads: 64
+  biobloom_filter_dir: "/gpfs/project/projects/bmfz_gtl/databases/biobloom/"
+  biobloom_filters: '"cannabis.bf c_elegans.bf clementine.bf coffee.bf cottus_rhenaus.bf crayfish_gca.bf eColi_mg16.bf elephant_seal.bf fruitfly.bf fungus.bf giardia.bf honeyBee_hav3.bf human_hs1.bf lichen.bf mite.bf moss_Phypa_V3.bf mouse_mm39.bf octopus_PRJNA.bf opium.bf paulinella_ribosomes.bf pea.bf pineapple.bf rat_rn7.bf red_clover.bf rice.bf rye.bf soybean_GlyMax.bf tobacco.bf wheat.bf yeast_R64.bf zebrafish.bf Aquilegia_eximia.bf arabidopsis_tair10.bf bac_subtilis_168.bf barley_HorVulMor.bf barrel_clover.bf"'
+
+# diamond is much more efficient then blast, but here works only on protein sequences.
+# much faster than blast, kraken or biobloom
+diamond:
+  diamond_active: True
+  diamond_threads: 24
+  diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
+
+
 software_versions_file: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/envs/complete_software_env.tsv"
 
 # fastqc also now adds a fastp report. there some additional infos that can be found such as the base-specific phred score for each .fastq file.
@@ -96,17 +129,17 @@ others:
 # use this only when absolutely needed, in a screen session! pw needs to be manually typed in after all analysis are done.
 gocryptfs:
   gocryptfs_version: gocryptfs/1.7.1
-  gocryptfs_active: True
+  gocryptfs_active: False
 
 # not used for now, can transfer only unencrypted folders to places such as notfallserver. needs a login-less connection to work.
 transfer:
-  transfer_active: True
+  transfer_active: False
   transfer_to: "134.99.204.8:/mnt/data/pipelines/"
   transfer_as: "daniel@"
   
   
-  
 # manuals:
+# jellyfish manual: https://github.com/gmarcais/Jellyfish/blob/master/doc/Readme.md
 # illumina interops manual: https://illumina.github.io/interop/index.html
 # cutadapt manual: https://cutadapt.readthedocs.io/en/stable/guide.html
 # kraken2 manual: https://github.com/DerrickWood/kraken2/wiki/Manual
@@ -118,3 +151,6 @@ transfer:
 # star manual: https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf
 # featurecounts quick start: https://subread.sourceforge.net/featureCounts.html
 # stringtie manual: https://ccb.jhu.edu/software/stringtie/index.shtml?t=manual
+# biobloom manual: https://github.com/bcgsc/biobloom/blob/master/Doc/MultiIndex.md
+
+
