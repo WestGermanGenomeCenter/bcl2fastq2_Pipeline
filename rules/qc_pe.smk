@@ -11,9 +11,36 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 
 #include: "qc.smk"
 #include: "pe_processing.smk"
-#include: "common.smk"
+include: "common.smk"
 
 
+
+def isSingleEnd() -> bool:
+    """
+    Returns wether the fastqs are single-end=True or paired-end=False
+    """
+    R1 = list()
+    R2 = list()
+    for sample in sample_names:
+        if sample.split("_R")[1].startswith("1"):
+            R1.append(sample)
+            #print("issingleend: attaching to R1:")
+            #print(sample)
+            only_sample=sample.replace('_R1', '')
+                      # outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+            #read1=expand("{out}/trimmed/{file}_{read}_trimmed.fastq.gz",out=outputfolder,
+            #print("returning pe out read1:")
+            #print(read1)
+        else:
+            R2.append(sample)
+            #print("issingleend: attaching to R2:")
+            #print(sample)
+    if len(R1)!=len(R2):
+        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
+        return True
+#    print ("R1 and R2 are same length, returning isSingleEnd=False")
+    else:
+        return False
 
 if isSingleEnd() == False:
 
