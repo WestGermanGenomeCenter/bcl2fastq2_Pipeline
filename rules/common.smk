@@ -59,7 +59,7 @@ def isSingleEnd() -> bool:
             #print("issingleend: attaching to R2:")
             #print(sample)
     if len(R1)!=len(R2):
-        print("R1 and R2 are not the same length, returning isSingleEnd=True")
+        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
         return True
 #    print ("R1 and R2 are same length, returning isSingleEnd=False")
     else:
@@ -67,7 +67,7 @@ def isSingleEnd() -> bool:
 
 
 def getSample_names_post_mapping():# maybe wildcards ne
-	if isSingleEnd == True:
+	if isSingleEnd () == True:
 		#print("returning sample_names:")
 		#print(sample_names)
 		return sample_names
@@ -154,3 +154,8 @@ for sample_full in sample_names:
         #print(only_sample_single)
         only_sample.append(only_sample_single)
 
+def getFastqs(wildcards):
+    samples = getSamples(wildcards)
+    if len(samples)>1:
+        return " ".join(samples)
+    return samples

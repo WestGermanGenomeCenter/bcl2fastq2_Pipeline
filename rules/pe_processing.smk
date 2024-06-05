@@ -72,8 +72,8 @@ if isSingleEnd() == False:
 
     rule align_pe: # aligning pe can only input trimmed  or umi_extracted data, no untrimmed data allowed!
         input:
-            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
+            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
         output:
             bams=outputfolder + "/star/{short}_pe_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
             tabs=outputfolder + "/star/{short}_pe_ReadsPerGene.out.tab"
@@ -149,6 +149,7 @@ if isSingleEnd() == False:
                 #path=getPath,
                 umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
                 #unzipped_files=outputfolder+"/{file}.fastq",
+                ptrn_2=lambda wc:config["umi_tools"]["pattern2"],
                 #extended_name=config["umi_tools"]["extended_name"],
                 outputf=outputfolder+"/umi_extract",
                 logfolder=outputfolder+"/logs/umi_tools/",
@@ -164,7 +165,7 @@ if isSingleEnd() == False:
                 """
                 mkdir -p {params.outputf}
                 mkdir -p {params.logfolder}
-                umi_tools extract --stdin={input.in_1} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output.out1} --read2-in={input.in_2} --read2-out={output.out2} --bc-pattern2={params.umi_ptrn}
+                umi_tools extract --stdin={input.in_1} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output.out1} --read2-in={input.in_2} --read2-out={output.out2} --bc-pattern2={params.ptrn_2}
                 chmod ago+rwx -R {params.outputf}
                 sha256sum {output} >>{params.checksum_file}
                 """ 

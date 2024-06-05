@@ -60,7 +60,6 @@ rseqc: # for this to work, cutadapt needs to be active
   rseqc_mapping_active: True
   gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
   genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl"
-  strandedness: True 
   STAR_threads: 12
   other_params: ""
   rseqc_modules_active: True
@@ -78,6 +77,7 @@ umi_tools: # for this to work, cutadapt needs to be active
   umi_tools_active: False
  # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read
   pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! : '"(?P<umi_1>.{6})(?P<discard_1>TATA).*"'
+  pattern2: '""' # umi pattern for the second read if needed
   extended_name: "umiextr"
   umi_tools_dedup_bam: True
   threads: 12

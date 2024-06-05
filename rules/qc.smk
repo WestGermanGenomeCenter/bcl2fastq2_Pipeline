@@ -11,7 +11,7 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 
 #include: "qc_pe.smk"
 #include: "pe_processing.smk"
-#include: "common.smk"
+include: "common.smk"
 
 
 

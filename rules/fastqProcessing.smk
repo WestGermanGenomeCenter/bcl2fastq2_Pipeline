@@ -74,8 +74,8 @@ def getOutput():
         all.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
 
 #         log_file=outputfolder+"/diamond/{file}/diamond.log",
-    print ("test: this is all files that should be created:")
-    print (all)
+    #print ("test: this is all files that should be created:")
+    #print (all)
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -169,7 +169,7 @@ if isSingleEnd() == True:
 
     rule align:
         input:
-            fastqs=getSamples
+            fastqs=outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
         output:
             bams=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
             tabs=outputfolder + "/star/{file}_ReadsPerGene.out.tab"
@@ -195,42 +195,42 @@ if isSingleEnd() == True:
             """
             mkdir -p {params.qc_dir}
             mkdir -p {params.rseqc_dir}
-            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {params.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
+            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
             chmod ago+rwx -R {output} >> {log} 2>&1
             """
 
 
 
-rule FastQC_untrimmed:
-    input:
-        samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
-    params:
-    #    path=getPath,
-        fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
-        fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
-        html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
-        zip = outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip",
-        out = outputfolder
-    output:
-        zip = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip", 
-        html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
-    threads: config["others"]["fastQC_threads"]
-    log:
-        outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
-    conda:
-        p+"/envs/fastqc.yaml"
-    message:
-        "Run untrimmed FastQC"
-    shell:
-        """
-        mkdir -p {params.out}/fastqc_untrimmed/
-        chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
-        unset command_not_found_handle
-        fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
-        fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
-        mv {params.zip} {output.zip}
-        mv {params.html} {output.html}
-        """
+    rule FastQC_untrimmed:
+        input:
+            samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+        params:
+        #    path=getPath,
+            fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
+            fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
+            html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
+            zip = outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip",
+            out = outputfolder
+        output:
+            zip = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip", 
+            html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
+        threads: config["others"]["fastQC_threads"]
+        log:
+            outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
+        conda:
+            p+"/envs/fastqc.yaml"
+        message:
+            "Run untrimmed FastQC"
+        shell:
+            """
+            mkdir -p {params.out}/fastqc_untrimmed/
+            chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+            unset command_not_found_handle
+            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
+            mv {params.zip} {output.zip}
+            mv {params.html} {output.html}
+            """
 
 
 rule samtools:
