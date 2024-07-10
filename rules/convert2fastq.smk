@@ -15,13 +15,30 @@ configfile: "config.yaml"
 validate(config, schema="../schemas/config.schema.yaml")
 samplesheet = config["bcl2fastq"]["SampleSheet"]
 outputfolder = config["bcl2fastq"]["OutputFolder"]
-fastqre   = re.compile(r'\.fastq.gz$')
 
-include: "qc.smk"
-include: "qc_pe.smk"
-include: "pe_processing.smk"
+#include: "qc.smk"
+#include: "qc_pe.smk"
+#include: "pe_processing.smk"
 include: "common.smk"
 
+
+def getSample_names_post_mapping():# maybe wildcards ne
+	if isSingleEnd () == True:
+		return sample_names
+	else:
+		pe_samplenames = list()
+		for sample in sample_names:
+			if sample.split("_R")[1].startswith("1"):
+				only_sample=sample.replace('_R1','_pe')
+				pe_samplenames.append(only_sample)
+		return pe_samplenames
+
+
+sample_names = list()
+if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+    fastqs = list(samples_dataframe.iloc[:, 0].values)
+    sample_names = [fastq[:-9] for fastq in fastqs]
 
 def validateBefore(outputfolder):
     success = validateSamplesheet(samplesheet)
@@ -110,12 +127,6 @@ if not config["skip_demux"]["skip_demux_active"]:
         threads: config["bcl2fastq"]["threads"]
         message:
             "Running bcl convert"
-        envmodules:
-            config["bcl2fastq"]["bcl2fastq2_version"]
-            # change the cmd params for bcl convert
-            # then make a new runPipeline.sh with a -n option
-            # or make a config params to switch between bcl convert and bcl2fastq?????
-            # barcode mismatches no longer part of command line arguments, now part of the samplesheet
         shell:
             """
             mkdir -p {params.out}

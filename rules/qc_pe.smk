@@ -9,11 +9,27 @@ from helper import validateSamplesheet, validateOutput, validateProjectNum
 configfile: "config.yaml"
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 
-#include: "qc.smk"
-#include: "pe_processing.smk"
-include: "common.smk"
+#include: "common.smk"
+
+projectNum=validateProjectNum(samplesheet)
+
+def getSample_names_post_mapping():# maybe wildcards ne
+	if isSingleEnd () == True:
+		return sample_names
+	else:
+		pe_samplenames = list()
+		for sample in sample_names:
+			if sample.split("_R")[1].startswith("1"):
+				only_sample=sample.replace('_R1','_pe')
+				pe_samplenames.append(only_sample)
+		return pe_samplenames
 
 
+sample_names = list()
+if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+    fastqs = list(samples_dataframe.iloc[:, 0].values)
+    sample_names = [fastq[:-9] for fastq in fastqs]
 
 def isSingleEnd() -> bool:
     """
@@ -24,21 +40,10 @@ def isSingleEnd() -> bool:
     for sample in sample_names:
         if sample.split("_R")[1].startswith("1"):
             R1.append(sample)
-            #print("issingleend: attaching to R1:")
-            #print(sample)
-            only_sample=sample.replace('_R1', '')
-                      # outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-            #read1=expand("{out}/trimmed/{file}_{read}_trimmed.fastq.gz",out=outputfolder,
-            #print("returning pe out read1:")
-            #print(read1)
         else:
             R2.append(sample)
-            #print("issingleend: attaching to R2:")
-            #print(sample)
     if len(R1)!=len(R2):
-        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
         return True
-#    print ("R1 and R2 are same length, returning isSingleEnd=False")
     else:
         return False
 
@@ -56,7 +61,6 @@ if isSingleEnd() == False:
         params:
             extra=r"-q 255",  # STAR uses 255 as a score for unique mappers
             prefix=outputfolder+"/qc/rseqc/{file}.junctionanno"
-            #prefix=lambda w, output: output[0].replace(".junction.bed", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -78,7 +82,6 @@ if isSingleEnd() == False:
         params:
             extra=r"-q 255",
             prefix=outputfolder+"/qc/rseqc/{file}.junctionsat",
-            #prefix=lambda w, output: output[0].replace(".junctionSaturation_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -126,7 +129,6 @@ if isSingleEnd() == False:
             outputfolder+"/logs/rseqc/rseqc_innerdis/{file}.log",
         params:
             prefix=outputfolder+"/qc/rseqc/{file}.inner_distance_freq",
-            #prefix=lambda w, output: output[0].replace(".inner_distance.txt", ""),
             nvc_outpre=outputfolder+"/qc/rseqc/{file}_nucleotide_composition_bias",
             tin_prefix=outputfolder+"/qc/rseqc/{file}_tin_.bed",
             genebody_pre=outputfolder+"/qc/rseqc/{file}_genebody_coverage",
@@ -169,7 +171,6 @@ if isSingleEnd() == False:
             outputfolder+"/logs/rseqc/rseqc_readdup/{file}.log"
         params:
             prefix=outputfolder+"/qc/rseqc/{file}.readdup"
-            #prefix=lambda w, output: output[0].replace(".DupRate_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:
@@ -186,7 +187,6 @@ if isSingleEnd() == False:
             outputfolder+"/logs/rseqc/rseqc_readgc/{file}.log"
         params:
             prefix=outputfolder+"/qc/rseqc/{file}.readgc"
-            #prefix=lambda w, output: output[0].replace(".GC_plot.pdf", ""),
         conda:
             p+"/envs/rseqc.yaml"
         shell:

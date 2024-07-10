@@ -9,9 +9,27 @@ from helper import validateSamplesheet, validateOutput, validateProjectNum
 configfile: "config.yaml"
 outputfolder = config["bcl2fastq"]["OutputFolder"]
 
-#include: "qc_pe.smk"
-#include: "pe_processing.smk"
-include: "common.smk"
+#include: "common.smk"
+
+
+
+def getSample_names_post_mapping():# maybe wildcards ne
+	if isSingleEnd () == True:
+		return sample_names
+	else:
+		pe_samplenames = list()
+		for sample in sample_names:
+			if sample.split("_R")[1].startswith("1"):
+				only_sample=sample.replace('_R1','_pe')
+				pe_samplenames.append(only_sample)
+		return pe_samplenames
+
+
+sample_names = list()
+if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+    fastqs = list(samples_dataframe.iloc[:, 0].values)
+    sample_names = [fastq[:-9] for fastq in fastqs]
 
 
 def isSingleEnd() -> bool:
@@ -23,21 +41,11 @@ def isSingleEnd() -> bool:
     for sample in sample_names:
         if sample.split("_R")[1].startswith("1"):
             R1.append(sample)
-            #print("issingleend: attaching to R1:")
-            #print(sample)
             only_sample=sample.replace('_R1', '')
-                      # outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-            #read1=expand("{out}/trimmed/{file}_{read}_trimmed.fastq.gz",out=outputfolder,
-            #print("returning pe out read1:")
-            #print(read1)
         else:
             R2.append(sample)
-            #print("issingleend: attaching to R2:")
-            #print(sample)
     if len(R1)!=len(R2):
-        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
         return True
-#    print ("R1 and R2 are same length, returning isSingleEnd=False")
     else:
         return False
 
@@ -57,14 +65,6 @@ rule rseqc_gtf2bed:
         p+"/envs/gffutils.yaml"
     script:
         "../scripts/gtf2bed.py"
-#    shell:
-#    	"""
-#    	mkdir -p {params.qc_dir}
-#    	mkdir -p {params.rseqc_dir}
-#    	convert2bed -i gtf < {input} > {output.bed}
-#    	python scripts/gtf2bed.py {input} {output.bed} 2>{log}
-#    	#convert2bed -i gtf  < {input} >{output.bed} 2>{log}
-#    	"""
 
 if isSingleEnd() == True:
     rule rseqc_junction_annotation:

@@ -17,16 +17,12 @@ outputfolder = config["bcl2fastq"]["OutputFolder"]
 
 ### include rules ###
 
-#include: "qc.smk"
-#include: "qc_pe.smk"
-#include: "common.smk"
-# Get the fastq.gz samples
-
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
     fastqs = list(samples_dataframe.iloc[:, 0].values)
     sample_names = [fastq[:-9] for fastq in fastqs]
+
 
 # Validate input from config
 def validateBefore(outputfolder):
@@ -35,6 +31,25 @@ def validateBefore(outputfolder):
     return True if success and outputfolder is not None else False
 
 validRun = validateBefore(outputfolder)
+
+
+def get_pe_pairingsheet():
+    # get samplenamespostmapping, get r1 , get r2 and save all onto a file
+    # use the old structure
+    R1 = list()
+    R2 = list() 
+    pe_samplenames = list ()
+    for sample in sample_names:
+        if sample.split("_R")[1].startswith("1"):
+            R1.append(sample)
+            only_sample=sample.replace('_R1','_pe')
+            pe_samplenames.append(only_sample)
+        else:
+            R2.append(sample)
+
+    df = pd.DataFrame(list(zip(R1, R2, pe_samplenames)),columns=['read1','read2','pe_samplename'])
+
+    df.to_csv(outputfolder+"/pe_samples.tsv", sep="\t", index=False)
 
 
 
@@ -47,32 +62,19 @@ def isSingleEnd() -> bool:
     for sample in sample_names:
         if sample.split("_R")[1].startswith("1"):
             R1.append(sample)
-            #print("issingleend: attaching to R1:")
-            #print(sample)
-            only_sample=sample.replace('_R1', '')
-                      # outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-            #read1=expand("{out}/trimmed/{file}_{read}_trimmed.fastq.gz",out=outputfolder,
-            #print("returning pe out read1:")
-            #print(read1)
         else:
             R2.append(sample)
-            #print("issingleend: attaching to R2:")
-            #print(sample)
     if len(R1)!=len(R2):
-        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
         return True
-#    print ("R1 and R2 are same length, returning isSingleEnd=False")
     else:
         return False
 
 if isSingleEnd() == False:
     rule cutadapt_pe:
         input:
-            in_1=outputfolder+"/untrimmed_fastq/{short}_R1.fastq.gz",
-            in_2=outputfolder+"/untrimmed_fastq/{short}_R2.fastq.gz"
+            in_1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
+            in_2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
         params:
-            #fastq_input=get_pe_trimming,
-            #input_fastqs=getcutadapt_pe_string,
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],
             out=outputfolder,
@@ -110,15 +112,12 @@ if isSingleEnd() == False:
         log:
             outputfolder+"/logs/star/{short}.log"
         params:
-            # optional parameters
             extra="--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --sjdbGTFfile {} {}".format(
                 config["rseqc"]["gtf_file"], config["rseqc"]["other_params"]),
-            #outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/"+w.file)+"/",
             prefix = outputfolder + "/star/{short}_pe_",
             genDir = config["rseqc"]["genomeDir"],
             qc_dir = outputfolder + "/qc",
             rseqc_dir = outputfolder+"/qc/rseqc",
-            #fastqs=lambda w: getFastqs(w.file),
 
         threads: config["rseqc"]["STAR_threads"]
         conda:
@@ -135,12 +134,9 @@ if isSingleEnd() == False:
 
     rule FastQC_pe:
         input:  # need to test this if this works, also the input fun of kraken rule 
-        #             outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
             outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
             outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
-           # outputfolder + "/umi_extract/{file}.umis-extracted.fastq.gz"  if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz
         params:
-            #path=getPath,
             out=outputfolder,
             fastp_report=outputfolder+"/fastqc/{short}_after_filtering_fastp.html",
             fastp_json= outputfolder+"/fastqc/{short}_after_filtering_fastp.json"
@@ -166,6 +162,33 @@ if isSingleEnd() == False:
             chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
 
+    rule crypt4gh_pe:
+        input:
+            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
+            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+        params:
+            priv_key=config["crypt4gh"]["crypt4gh_own_private_key"],
+            pub_key=config["crypt4gh"]["crypt4gh_client_public_key_dir"],# here the collaborators an our many public keys, all that can decrypt later
+            c4gh_folder=outputfolder+"/encrypted_fastqs",
+            c4gh_logfolder=outputfolder+"/logs/crypt4gh",
+            checksum_file=outputfolder+"/encrypted_fastqs/checksums_encrypted_fastqs.sha256",
+        log:
+            outputfolder+"/logs/crypt4gh/crypt4gh_encryption_{file}.log"
+        message: "Running crypt4gh encryption on trimmed (and umis extracted if enabled) .fastq.gz files..."
+        conda:
+            p+"/envs/crypt4gh.yaml"
+        output:
+            c4gh_out1=outputfolder+"/encrypted_fastqs/{file}_R1_processed.fastq.gz.c4gh",
+            c4gh_out2=outputfolder+"/encrypted_fastqs/{file}_R2_processed.fastq.gz.c4gh"
+
+        shell:
+            """
+            mkdir -p {params.c4gh_folder}
+            mkdir -p {params.c4gh_logfolder
+            crypt4gh encrypt --sk {params.priv_key} (for i in {params.pub_key}*.pub; do echo "--recipient_pk $i"; done) < {input.pe1} > {output.c4gh_out1} 2>{log}
+            crypt4gh encrypt --sk {params.priv_key} (for i in {params.pub_key}*.pub; do echo "--recipient_pk $i"; done) < {input.pe2} > {output.c4gh_out2} 2>{log}
+            sha256sum {output} >>{params.checksum_file}
+            """
 
 
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
@@ -174,11 +197,8 @@ if isSingleEnd() == False:
                 in_1=outputfolder+"/untrimmed_fastq/{short}_R1.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
                 in_2=outputfolder+"/untrimmed_fastq/{short}_R2.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"                
             params:
-                #path=getPath,
                 umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
-                #unzipped_files=outputfolder+"/{file}.fastq",
                 ptrn_2=lambda wc:config["umi_tools"]["pattern2"],
-                #extended_name=config["umi_tools"]["extended_name"],
                 outputf=outputfolder+"/umi_extract",
                 logfolder=outputfolder+"/logs/umi_tools/",
                 checksum_file=expand(outputfolder+"/umi_extract/checksums_umis_extracted_{prj}.sha256", prj=projectNum)
@@ -198,18 +218,7 @@ if isSingleEnd() == False:
                 sha256sum {output} >>{params.checksum_file}
                 """ 
 
-# umi_tools extract --extract-method=string
-#--bc-pattern=[PATTERN] --bc-pattern2=[PATTERN]
-#--read2-in=[FASTQIN] --read2-out=[FASTQOUT] -L extract.log [OPTIONS]
-
-# add umi-tools if all works out
-# test,test,test - even with se data
-
-
-
-
-
-
+    #get_pe_pairingsheet()
 
 
 

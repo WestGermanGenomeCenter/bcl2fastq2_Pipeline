@@ -47,41 +47,25 @@ def isSingleEnd() -> bool:
     for sample in sample_names:
         if sample.split("_R")[1].startswith("1"):
             R1.append(sample)
-            #print("issingleend: attaching to R1:")
-            #print(sample)
             only_sample=sample.replace('_R1', '')
-                      # outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
-            #read1=expand("{out}/trimmed/{file}_{read}_trimmed.fastq.gz",out=outputfolder,
-            #print("returning pe out read1:")
-            #print(read1)
         else:
             R2.append(sample)
-            #print("issingleend: attaching to R2:")
-            #print(sample)
     if len(R1)!=len(R2):
-        #print("R1 and R2 are not the same length, returning isSingleEnd=True")
         return True
-#    print ("R1 and R2 are same length, returning isSingleEnd=False")
     else:
         return False
 
 
 def getSample_names_post_mapping():# maybe wildcards ne
 	if isSingleEnd () == True:
-		#print("returning sample_names:")
-		#print(sample_names)
 		return sample_names
-		# returns DE49NGSUKBD138961_R1
 	else:
 		pe_samplenames = list()
 		for sample in sample_names:
 			if sample.split("_R")[1].startswith("1"):
 				only_sample=sample.replace('_R1','_pe')
 				pe_samplenames.append(only_sample)
-		#print("returning pe samplenames:")
-		#print(pe_samplenames)
 		return pe_samplenames
-		# returns DE49NGSUKBD138961_pe if all goes well
 
 
 
@@ -134,12 +118,6 @@ def get_pe_pairingsheet():
         else:
             R2.append(sample)
 
-    #print("R1:")
-    #print(R1)
-    #print("R2:")
-    #print(R2)
-    #print("postM:")
-    #print(pe_samplenames)
     df = pd.DataFrame(list(zip(R1, R2, pe_samplenames)),columns=['read1','read2','pe_samplename'])
 
     df.to_csv(outputfolder+"/pe_samples.tsv", sep="\t", index=False)
@@ -148,10 +126,7 @@ def get_pe_pairingsheet():
 only_sample=list() # if paired end, this spits out a  list of samplenames without the _R1, and only half of the fastq files 
 for sample_full in sample_names:
     if sample_full.split("_R")[1].startswith("1"):
-        #R1.append(sample)
-        #print("getting the only_sample: attaching :")
         only_sample_single=sample_full.replace('_R1', '')
-        #print(only_sample_single)
         only_sample.append(only_sample_single)
 
 def getFastqs(wildcards):

@@ -170,7 +170,7 @@
       "nodes" : 1,
       "name" : "demux.{jobid}",
       "time" : "1:59:59",
-      "mem" : "64GB",
+      "mem" : "96GB",
       "error" : "clusterLogs/bcl2fastq2.{jobid}.errors",
       "output" : "clusterLogs/bcl2fastq2.{jobid}.output"
     },
@@ -273,6 +273,30 @@
       "output" : "clusterLogs/transfer.{jobid}.output"
     },
     
+    "crypt4gh" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "c4gh.{jobid}",
+      "time" : "23:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/c4gh.{jobid}.errors",
+      "output" : "clusterLogs/c4gh.{jobid}.output"
+    },
+
+    "crypt4gh_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "c4gh.{jobid}",
+      "time" : "23:59:59",
+      "mem" : "8GB",
+      "error" : "clusterLogs/c4gh.{jobid}.errors",
+      "output" : "clusterLogs/c4gh.{jobid}.output"
+    },
+
     "umi_extract" :
     {
       "account" : "HiSeq3000",
