@@ -112,6 +112,15 @@ diamond:
   diamond_threads: 24
   diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
 
+
+# sortmerna counts rRNA from input files, splitting the .fastq in the process. this does not filter before mapping, so all reads get mapped regardless!
+# needs cutadapt and/ or umi_tools to be active
+sortmerna:
+  sortmerna_active: True
+  sortmerna_threads: 12
+  sortmerna_reference_list: '"--ref /path/to/ref1 --ref /path/to/ref2"'
+
+
 # crypt4gh encryption of umi_extract/cutadapt output files. needs both files to be present on the same filesystem as files
 # use only for human data, only transfer the files in the /encrypted_fastqs/ folder 
 crypt4gh:

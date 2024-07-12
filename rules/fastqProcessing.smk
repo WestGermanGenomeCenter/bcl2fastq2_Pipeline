@@ -110,7 +110,11 @@ def getOutput():
 
     if config["diamond"]["diamond_active"]:
         all.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+    if config["sortmerna"]["sortmerna_active"]:
+        all.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
 
+
+# fq_rrna_free=outputfolder+"/sortmerna/{file}_non-ribosomal_rna.fq.gz",
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -146,6 +150,9 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
     if config["diamond"]["diamond_active"]:
         fastQCs.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+    if config["sortmerna"]["sortmerna_active"]:
+        fastQCs.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
+
     return fastQCs
 
 
@@ -425,6 +432,35 @@ if isSingleEnd() == True:
             """
 
 
+    rule sortmerna:
+        input:
+            outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+        params:
+            ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
+            fq_rrna_string=outputfolder+"/sortmerna/{file}_ribosomal_rna",
+            fq_rrna_free_string=outputfolder+"/sortmerna/{file}_non-ribosomal_rna",
+            log_folder=outputfolder+"/logs/sortmerna/",
+            folder_sort=outputfolder+"/sortmerna/",
+            workdir=outputfolder+"/sortmerna/{file}_sortmerna",
+
+        output:
+            fq_rrna=outputfolder+"/sortmerna/{file}_ribosomal_rna.fq.gz",
+            fq_rrna_free=outputfolder+"/sortmerna/{file}_non-ribosomal_rna.fq.gz",
+        log:
+            outputfolder+"/logs/sortmerna/rrna_removal_{file}.log"
+        threads:
+            config["sortmerna"]["sortmerna_threads"]
+        conda:
+            p+"/envs/sortmerna.yaml"
+        message:"sortmerna: removing rRNA reads from trimmed/ umi-moved .fastq files"
+        shell:
+            """
+            mkdir -p {params.log_folder} 
+            mkdir -p {params.folder_sort} 2>{log}
+            sortmerna {params.ref_string} --reads {input} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
+            """
+# #nice sortmerna --ref rfam-5.8s-database-id98.fasta --ref silva-arc-23s-id98.fasta --ref silva-bac-23s-id98.fasta --ref silva-euk-28s-id98.fasta --reads ../../612/612-3_processed.fastq.gz --threads 64 --workdir ./sortmerna-workdir_test_13 --aligned rRna_reads_test_ --fastx --other non_rRna_reads_test_
+
 
 
 if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
@@ -622,7 +658,7 @@ rule biobloom:
         nice biobloomcategorizer -f {params.filter_string} {params.fastq_file} -t {threads} -p {params.output_prefix} 2>{log}
   
         """
-    
+
 rule diamond:
     input:
         outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
