@@ -321,7 +321,17 @@
       "output" : "clusterLogs/sortmerna.{jobid}.output"
     },
 
-
+    "sortmerna_pe" :
+    {
+      "account" : "HiSeq3000",
+      "queue" : "workq",
+      "nodes" : 1,
+      "name" : "sortmerna_pe.{jobid}",
+      "time" : "1:59:59",
+      "mem" : "24GB",
+      "error" : "clusterLogs/sortmerna_pe.{jobid}.errors",
+      "output" : "clusterLogs/sortmerna_pe.{jobid}.output"
+    },
 
     "umi_extract_pe" :
     {

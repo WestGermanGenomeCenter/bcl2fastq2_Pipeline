@@ -59,6 +59,8 @@ def isSingleEnd() -> bool:
     else:
         return False
 
+
+
 # Set expected pipeline output
 def getOutput():
     all = list()
@@ -173,6 +175,23 @@ rule all:
 
 
 if isSingleEnd() == True:
+
+
+
+# need to build the same for pe aswell
+
+    def get_mapping_input(wildcards):
+        if config["sortmerna"]["sortmerna_active"]:
+            mapping_se_fastq=outputfolder+"/sortmerna/{file}_non-ribosomal_rna.fq.gz"
+        elif config["umi_tools"]["umi_tools_active"]:
+            mapping_se_fastq=outputfolder + "/umi_extract/{file}.umis-extracted.fastq.gz"
+        elif config ["cutadapt"]["cutadapt_active"]:
+            mapping_se_fastq=outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+        else:
+            mapping_se_fastq=outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+        return mapping_se_fastq
+
+
     rule cutadapt:
         input:
         # change this to if paired end, only the R1 as input
@@ -205,7 +224,8 @@ if isSingleEnd() == True:
 
     rule align:
         input:
-            fastqs=outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
+            fastqs=get_mapping_input
+            #fastqs=outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
         output:
             bams=temp(outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam"), #this needs to be deduped 
             tabs=outputfolder + "/star/{file}_ReadsPerGene.out.tab"
@@ -460,6 +480,9 @@ if isSingleEnd() == True:
             sortmerna {params.ref_string} --reads {input} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
             """
 # #nice sortmerna --ref rfam-5.8s-database-id98.fasta --ref silva-arc-23s-id98.fasta --ref silva-bac-23s-id98.fasta --ref silva-euk-28s-id98.fasta --reads ../../612/612-3_processed.fastq.gz --threads 64 --workdir ./sortmerna-workdir_test_13 --aligned rRna_reads_test_ --fastx --other non_rRna_reads_test_
+
+
+# next: nice centrifuge -x nt -U ../../run_2/Batch_2/612-15_S3_R1_001.fastq.gz --out-fmt tab -q -p 32 --mm -S test_classification_test_nt_db.out --report-file centrifuge_mouse_nt_dp.report -k 1 
 
 
 

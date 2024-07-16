@@ -118,7 +118,7 @@ diamond:
 sortmerna:
   sortmerna_active: True
   sortmerna_threads: 12
-  sortmerna_reference_list: '"--ref /path/to/ref1 --ref /path/to/ref2"'
+  sortmerna_reference_list: ' --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5.8s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-28s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-18s-id95.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-16s-id90.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-16s-id95.fasta'
 
 
 # crypt4gh encryption of umi_extract/cutadapt output files. needs both files to be present on the same filesystem as files

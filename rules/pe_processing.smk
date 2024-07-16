@@ -70,6 +70,35 @@ def isSingleEnd() -> bool:
         return False
 
 if isSingleEnd() == False:
+
+
+# add the second read, make mapping dependent on it
+# need to make sortmerna put out pe aswell before this works
+
+
+    def get_mapping_input_pe1(wildcards):
+        if config["sortmerna"]["sortmerna_active"]:
+            mapping_se_fastq1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz" # maybe this works
+        elif config["umi_tools"]["umi_tools_active"]:
+            mapping_se_fastq1=outputfolder + "/umi_extract/{short}_R1_001.fastq.gz"
+        elif config ["cutadapt"]["cutadapt_active"]:
+            mapping_se_fastq1=outputfolder+"/trimmed/{short}_R1_001.fastq.gz"
+        else:
+            mapping_se_fastq1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
+        return mapping_se_fastq1
+
+    def get_mapping_input_pe2(wildcards):
+        if config["sortmerna"]["sortmerna_active"]:
+            mapping_se_fastq2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz" # maybe this works
+        elif config["umi_tools"]["umi_tools_active"]:
+            mapping_se_fastq2=outputfolder + "/umi_extract/{short}_R2_001.fastq.gz"
+        elif config ["cutadapt"]["cutadapt_active"]:
+            mapping_se_fastq2=outputfolder+"/trimmed/{short}_R2_001.fastq.gz"
+        else:
+            mapping_se_fastq2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz",
+        return mapping_se_fastq2
+
+
     rule cutadapt_pe:
         input:
             in_1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
@@ -102,8 +131,10 @@ if isSingleEnd() == False:
 
     rule align_pe: # aligning pe can only input trimmed  or umi_extracted data, no untrimmed data allowed!
         input:
-            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            pe1 = get_mapping_input_pe1,
+            pe2 = get_mapping_input_pe2
+            #pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
+            #pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
         output:
             bams=outputfolder + "/star/{short}_pe_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
             tabs=outputfolder + "/star/{short}_pe_ReadsPerGene.out.tab"
@@ -184,11 +215,48 @@ if isSingleEnd() == False:
         shell:
             """
             mkdir -p {params.c4gh_folder}
-            mkdir -p {params.c4gh_logfolder
-            crypt4gh encrypt --sk {params.priv_key} (for i in {params.pub_key}*.pub; do echo "--recipient_pk $i"; done) < {input.pe1} > {output.c4gh_out1} 2>{log}
-            crypt4gh encrypt --sk {params.priv_key} (for i in {params.pub_key}*.pub; do echo "--recipient_pk $i"; done) < {input.pe2} > {output.c4gh_out2} 2>{log}
+            mkdir -p {params.c4gh_logfolder}
+            crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.pe1} > {output.c4gh_out1} 2>{log}
+            crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.pe2} > {output.c4gh_out2} 2>{log}
             sha256sum {output} >>{params.checksum_file}
             """
+
+
+    rule sortmerna_pe:
+        input:
+            sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
+            sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+        params:
+            ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
+            fq_rrna_string=outputfolder+"/sortmerna/{short}_ribosomal_rna",
+            fq_rrna_free_string=outputfolder+"/sortmerna/{short}_non-ribosomal_rna",
+            log_folder=outputfolder+"/logs/sortmerna/",
+            folder_sort=outputfolder+"/sortmerna/",
+            workdir=outputfolder+"/sortmerna/{short}_sortmerna",
+
+        output:
+        # mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz"
+            fq_rrna1=outputfolder+"/sortmerna/{short}_ribosomal_rna_fwd.fq.gz",
+            fq_rrna_free1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz",
+            fq_rrna2=outputfolder+"/sortmerna/{short}_ribosomal_rna_rev.fq.gz",
+            fq_rrna_free2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz",
+        log:
+            outputfolder+"/logs/sortmerna/rrna_removal_{short}.log"
+        threads:
+            config["sortmerna"]["sortmerna_threads"]
+        conda:
+            p+"/envs/sortmerna.yaml"
+        message:"sortmerna: removing rRNA reads from trimmed/ umi-moved .fastq files"
+        shell:
+            """
+            mkdir -p {params.log_folder} 
+            mkdir -p {params.folder_sort} 2>{log}
+            sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
+            """
+
+#  mv non_rRNA_reads_fwd.f*q.gz ${prefix}_1.non_rRNA.fastq.gz
+#        mv non_rRNA_reads_rev.f*q.gz ${prefix}_2.non_rRNA.fastq.gz
 
 
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
@@ -217,6 +285,10 @@ if isSingleEnd() == False:
                 chmod ago+rwx -R {params.outputf}
                 sha256sum {output} >>{params.checksum_file}
                 """ 
+
+
+
+
 
     #get_pe_pairingsheet()
 
