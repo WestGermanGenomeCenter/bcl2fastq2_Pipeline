@@ -759,7 +759,7 @@ rule multiqc_raw:
     params:
     	output_folder= outputfolder,
     	list_file_raw= outputfolder + "/logs/fastq_file_list.tsv",
-    	folder_to_check=outputfolder + "/fastqc_untrimmed" if config["cutadapt"]["cutadapt_active"] else outputfolder+"/fastqc"
+    	folder_to_check=outputfolder + "/fastqc_untrimmed"
     log:
     	outputfolder+"/logs/MultiQC_raw.log"
     message:

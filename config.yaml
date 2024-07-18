@@ -14,7 +14,6 @@ bcl2fastq:
 
 # if you did already demultiplex, activate this here.
 # put all .fastq.gz files into that folder
-# change outputfolder above and the fastq_folder below accordingly, 
 skip_demux:
   skip_demux_active: False
   fastq_folder: "/gpfs/project/projects/bmfz_gtl/projects/1049_exom" #<- inside that folder are the .fastq.gz files expected then (untrimmed)
@@ -24,7 +23,7 @@ skip_demux:
 # if running pe-sequencing, the samples MUST be in ..._R1_001.fastq.gz/ ..._R2_001.fastq.gz naming, if not the pipeline will probably fail, rename the .fastq.gz files if needed!
 
 # for some reason, in some cases, bcl convert thinks that making the read 3 the reverse complement from the sequence in the samplesheet makes sense. 
-# we think differently, so there is a helper function that changes the settings in the RunInfo.xml. Keep this always inactive else you know better!
+# we think differently, so there is a helper function that changes the settings in the RunInfo.xml. The changes are reversed after finished demultiplexing. Keep this always inactive else you know better!
 prevent_revcomp:
     prevent_revcomp_active: False
 
