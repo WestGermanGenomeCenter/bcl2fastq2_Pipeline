@@ -64,6 +64,8 @@ def getOutput():
         all.extend(expand("{out}/interop_plots/interop_plots_done.flag",out=outputfolder))
     if config["prevent_revcomp"]["prevent_revcomp_active"]:
         all.extend(expand("{out}/revcomp_prevented.flag",out=outputfolder))
+        all.extend(expand("{out}/reversed_revcomp_prevented.flag",out=outputfolder))
+        # reversed_revcomp_prevented.flag
     if config["skip_demux"]["skip_demux_active"]:
         all.extend(expand("{out}/skipped_demuxing.flag",out=outputfolder))
 # env_file=config["bcl2fastq"]["OutputFolder"]+"/"+projectNum+"_software_environment.tsv"
@@ -99,6 +101,27 @@ rule prevent_revcomp:
         bash {params.script_to_fix} {params.folder_of_runxml}
         touch {output}
         """
+
+
+rule reverse_prevent_revcomp: # this rule only exists to reverse the edit of the runinfo.xml if the read3 revcomp option was activated
+    input:
+        demux_done=config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv",
+        sample_sheet=config["bcl2fastq"]["SampleSheet"]
+    params:
+        folder_of_runxml=getParentDir,
+        script_to_fix="scripts/reverse_revcomp_nexts2.sh",
+        out = config["bcl2fastq"]["OutputFolder"]
+    output:
+        config["bcl2fastq"]["OutputFolder"]+"/reversed_revcomp_prevented.flag" 
+        #backup_copy=getParentDir+"backup_original_RunInfo.xml"
+    shell:
+        """
+        mkdir -p {params.out}
+        bash {params.script_to_fix} {params.folder_of_runxml}
+        touch {output}
+        """
+
+
 
 if not config["skip_demux"]["skip_demux_active"]:
 

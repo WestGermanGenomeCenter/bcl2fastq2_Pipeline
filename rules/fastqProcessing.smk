@@ -649,7 +649,7 @@ rule jellyfish:
         jellyfish histo -o {output.hist_file} -f {params.mer_countsfile} 2>{log}
         jellyfish stats {params.mer_countsfile} >{params.stats_file}
         """
-
+# next, motus: motus                                      2.0.1  py27_1 
 
 
 rule biobloom:

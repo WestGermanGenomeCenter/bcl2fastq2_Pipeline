@@ -28,6 +28,7 @@ For best results, use Ensembl reference genome and annotation!
 - auto-transfer of folder to other servers
 - gocryptfs
 - preseq
+- sortmerna
 
   # Structure:
   the workflow is actually 3 parts:
