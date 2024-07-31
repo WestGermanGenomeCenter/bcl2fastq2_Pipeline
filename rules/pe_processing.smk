@@ -298,10 +298,10 @@ if isSingleEnd() == False:
             log_folder=outputfolder+"/logs/sortmerna/",
             folder_sort=outputfolder+"/sortmerna/",
             workdir=outputfolder+"/sortmerna/{short}_sortmerna",
-            fq_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna_fwd.fq.gz",
-            fq_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna_fwd.fq.gz",
-            fq_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna_rev.fq.gz",
-            fq_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna_rev.fq.gz",
+            fq_rrna1=outputfolder+"/sortmerna/{short}_ribosomal_rna_fwd.fq.gz",
+            fq_rrna_free1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz",
+            fq_rrna2=outputfolder+"/sortmerna/{short}_ribosomal_rna_rev.fq.gz",
+            fq_rrna_free2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz",
 
 # what the names should be
             out_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
