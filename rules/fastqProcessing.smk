@@ -258,38 +258,6 @@ if isSingleEnd() == True:
             """
 
 
-
-    rule FastQC_untrimmed:
-        input:
-            samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
-        params:
-        #    path=getPath,
-            fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
-            fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
-            html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
-            zip = temp(outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip"),
-            out = outputfolder
-        output:
-            zip = temp(outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip"), 
-            html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
-        threads: config["others"]["fastQC_threads"]
-        log:
-            outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
-        conda:
-            p+"/envs/fastqc.yaml"
-        message:
-            "Run untrimmed FastQC"
-        shell:
-            """
-            mkdir -p {params.out}/fastqc_untrimmed/
-            chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
-            unset command_not_found_handle
-            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
-            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
-            mv {params.zip} {output.zip}
-            mv {params.html} {output.html}
-            """
-
     rule crypt4gh:
         input:
             fq_in=outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
@@ -314,6 +282,56 @@ if isSingleEnd() == True:
             sha256sum {output} >>{params.checksum_file}
             """
 # crypt4gh encrypt --sk bob.sec $(for i in /pfad/zu/den/keys/*.pub; do echo --recipient_pk $i; done) < test > file.c4gh
+
+
+
+
+
+
+rule FastQC_untrimmed:
+    input:
+        samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+    params:
+    #    path=getPath,
+        fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
+        fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
+        html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
+        zip = temp(outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip"),
+        out = outputfolder
+    output:
+        zip = temp(outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip"), 
+        html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
+    threads: config["others"]["fastQC_threads"]
+    log:
+        outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
+    conda:
+        p+"/envs/fastqc.yaml"
+    message:
+        "Run untrimmed FastQC"
+    shell:
+        """
+        mkdir -p {params.out}/fastqc_untrimmed/
+        chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+        unset command_not_found_handle
+        fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+        fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
+        mv {params.zip} {output.zip}
+        mv {params.html} {output.html}
+        """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 rule samtools:
     input:

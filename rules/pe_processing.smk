@@ -82,7 +82,7 @@ if isSingleEnd() == False:
         elif config["umi_tools"]["umi_tools_active"]:
             mapping_se_fastq1=outputfolder + "/umi_extract/{short}_R1_001.fastq.gz"
         elif config ["cutadapt"]["cutadapt_active"]:
-            mapping_se_fastq1=outputfolder+"/trimmed/{short}_R1_001.fastq.gz"
+            mapping_se_fastq1=outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz"
         else:
             mapping_se_fastq1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
         return mapping_se_fastq1
@@ -93,7 +93,7 @@ if isSingleEnd() == False:
         elif config["umi_tools"]["umi_tools_active"]:
             mapping_se_fastq2=outputfolder + "/umi_extract/{short}_R2_001.fastq.gz"
         elif config ["cutadapt"]["cutadapt_active"]:
-            mapping_se_fastq2=outputfolder+"/trimmed/{short}_R2_001.fastq.gz"
+            mapping_se_fastq2=outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         else:
             mapping_se_fastq2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz",
         return mapping_se_fastq2
@@ -109,8 +109,8 @@ if isSingleEnd() == False:
             out=outputfolder,
             sha_sum_file=outputfolder+"/trimmed/sha256sums_fastqfiles_trimmed.sha256"
         output:
-            fq1=outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            fq2=outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            fq1=outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            fq2=outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
 
 
         threads: config["cutadapt"]["cutadapt_threads"]
@@ -165,18 +165,18 @@ if isSingleEnd() == False:
 
     rule FastQC_pe:
         input:  # need to test this if this works, also the input fun of kraken rule 
-            outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         params:
             out=outputfolder,
             fastp_report=outputfolder+"/fastqc/{short}_after_filtering_fastp.html",
             fastp_json= outputfolder+"/fastqc/{short}_after_filtering_fastp.json"
 
         output:
-            outputfolder+"/fastqc/{short}_R1_trimmed_fastqc.html",
-            outputfolder+"/fastqc/{short}_R1_trimmed_fastqc.zip" ,
-            outputfolder+"/fastqc/{short}_R2_trimmed_fastqc.html",
-            outputfolder+"/fastqc/{short}_R2_trimmed_fastqc.zip" ,
+            outputfolder+"/fastqc/{short}_R1_001_trimmed_fastqc.html",
+            outputfolder+"/fastqc/{short}_R1_001_trimmed_fastqc.zip" ,
+            outputfolder+"/fastqc/{short}_R2_001_trimmed_fastqc.html",
+            outputfolder+"/fastqc/{short}_R2_001_trimmed_fastqc.zip" ,
 
         threads: config["others"]["fastQC_threads"]
         log:
@@ -193,10 +193,74 @@ if isSingleEnd() == False:
             chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
 
+#FastQC untrimmed missing
+
+
+
+
+    rule FastQC_untrimmed_pe:
+        input:
+            outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
+            outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
+        params:
+        #    path=getPath,
+            fastp_report = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.html",
+            fastp_json = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.json",
+            html = outputfolder+"/fastqc_untrimmed/{short}_fastqc.html",
+            zip = temp(outputfolder+"/fastqc_untrimmed/{short}_fastqc.zip"),
+            out = outputfolder
+        output:
+            outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.html",
+            outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.zip" ,
+            outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.html",
+            outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.zip" ,
+        threads: config["others"]["fastQC_threads"]
+        log:
+            outputfolder+"/logs/fastqc/untrimmedFastQC{short}.log"
+        conda:
+            p+"/envs/fastqc.yaml"
+        message:
+            "Run untrimmed FastQC"
+        shell:
+            """
+            mkdir -p {params.out}/fastqc_untrimmed/
+            chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+            unset command_not_found_handle
+            fastqc -q --threads {threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
+            mv {params.zip} {output.zip}
+            mv {params.html} {output.html}
+            """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     rule crypt4gh_pe:
         input:
-            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         params:
             priv_key=config["crypt4gh"]["crypt4gh_own_private_key"],
             pub_key=config["crypt4gh"]["crypt4gh_client_public_key_dir"],# here the collaborators an our many public keys, all that can decrypt later
@@ -224,8 +288,8 @@ if isSingleEnd() == False:
 
     rule sortmerna_pe:
         input:
-            sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
+            sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
             #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
         params:
             ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
@@ -234,13 +298,23 @@ if isSingleEnd() == False:
             log_folder=outputfolder+"/logs/sortmerna/",
             folder_sort=outputfolder+"/sortmerna/",
             workdir=outputfolder+"/sortmerna/{short}_sortmerna",
+            fq_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna_fwd.fq.gz",
+            fq_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna_fwd.fq.gz",
+            fq_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna_rev.fq.gz",
+            fq_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna_rev.fq.gz",
+
+# what the names should be
+            out_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
+            out_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
+            out_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",
+            out_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz",
 
         output:
         # mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz"
-            fq_rrna1=outputfolder+"/sortmerna/{short}_ribosomal_rna_fwd.fq.gz",
-            fq_rrna_free1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz",
-            fq_rrna2=outputfolder+"/sortmerna/{short}_ribosomal_rna_rev.fq.gz",
-            fq_rrna_free2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz",
+            out_fq_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
+            out_fq_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
+            out_fq_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",
+            out_fq_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz",
         log:
             outputfolder+"/logs/sortmerna/rrna_removal_{short}.log"
         threads:
@@ -253,6 +327,10 @@ if isSingleEnd() == False:
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
+            mv {params.fq_rrna1} {params.out_rrna1}
+            mv {params.fq_rrna2} {params.out_rrna2}
+            mv {params.fq_rrna_free1} {params.out_rrna_free1}
+            mv {params.fq_rrna_free2} {params.out_rrna_free2}
             """
 
 #  mv non_rRNA_reads_fwd.f*q.gz ${prefix}_1.non_rRNA.fastq.gz
@@ -262,8 +340,8 @@ if isSingleEnd() == False:
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
         rule umi_extract_pe:
             input:
-                in_1=outputfolder+"/untrimmed_fastq/{short}_R1.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-                in_2=outputfolder+"/untrimmed_fastq/{short}_R2.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"                
+                in_1=outputfolder+"/untrimmed_fastq/{short}_R1.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+                in_2=outputfolder+"/untrimmed_fastq/{short}_R2.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"                
             params:
                 umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
                 ptrn_2=lambda wc:config["umi_tools"]["pattern2"],
