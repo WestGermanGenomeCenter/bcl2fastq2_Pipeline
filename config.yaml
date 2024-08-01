@@ -80,7 +80,7 @@ umi_tools: # for this to work, cutadapt needs to be active
 blast: # for this to work, cutadapt needs to be active
     blast_active: True
     blast_db: "/gpfs/project/projects/bmfz_gtl/software/blast/bigger_blastdb/bmfz_blast_big_db" # also possible: /gpfs/project/projects/bmfz_gtl/software/blast/nt /gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa much smaller, but annotated
-    blast_threads: 1
+    blast_threads: 24
     blast_script_dir: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
 
 # kraken2 is used to identify the species sequenced. helpful for contamination detection.based on kmers. using a shared database! 

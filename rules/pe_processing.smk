@@ -326,7 +326,7 @@ if isSingleEnd() == False:
             """
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
-            sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
+            sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --out2 --other {params.fq_rrna_free_string}
             mv {params.fq_rrna1} {params.out_rrna1}
             mv {params.fq_rrna2} {params.out_rrna2}
             mv {params.fq_rrna_free1} {params.out_rrna_free1}
