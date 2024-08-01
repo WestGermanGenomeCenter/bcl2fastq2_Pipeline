@@ -78,7 +78,7 @@ if isSingleEnd() == False:
 
     def get_mapping_input_pe1(wildcards):
         if config["sortmerna"]["sortmerna_active"]:
-            mapping_se_fastq1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz" # maybe this works
+            mapping_se_fastq1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz" # maybe this works
         elif config["umi_tools"]["umi_tools_active"]:
             mapping_se_fastq1=outputfolder + "/umi_extract/{short}_R1_001.fastq.gz"
         elif config ["cutadapt"]["cutadapt_active"]:
@@ -89,7 +89,7 @@ if isSingleEnd() == False:
 
     def get_mapping_input_pe2(wildcards):
         if config["sortmerna"]["sortmerna_active"]:
-            mapping_se_fastq2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz" # maybe this works
+            mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz" # maybe this works
         elif config["umi_tools"]["umi_tools_active"]:
             mapping_se_fastq2=outputfolder + "/umi_extract/{short}_R2_001.fastq.gz"
         elif config ["cutadapt"]["cutadapt_active"]:
