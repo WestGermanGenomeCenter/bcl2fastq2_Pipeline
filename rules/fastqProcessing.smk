@@ -635,7 +635,7 @@ rule blast:
         """
         mkdir -p {params.blast_folder}
         mkdir -p {params.blast_log_folder}
-        bash {params.script_dir}/fastq_to_fasta.sh {input} {params.blast_subsampled_fasta} 2>{log} 
+        bash {params.script_dir}/fastq_to_fasta_subsampling.sh {input} {params.blast_subsampled_fasta} 2>{log} 
         blastn -db {params.blast_db} -query {params.blast_subsampled_fasta} -outfmt 7 -max_target_seqs 5 -num_threads {threads} >{output.blast_out}  2>{log}
         chmod -R 755 {params.blast_folder}
         bash {params.script_dir}/filter_blast.sh {output} {params.summary_file}  2>{log}       
