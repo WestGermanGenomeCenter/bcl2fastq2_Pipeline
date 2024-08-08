@@ -436,7 +436,7 @@ rule stringtie:
         """
         mkdir -p {params.stie_log_folder}
         mkdir -p {params.out_folder} >> {log} 2>&1
-        stringtie {input.bams} -g {params.gtf} -o {output} -A {params.tab_file} >> {log} 2>&1
+        stringtie {input.bams} -G {params.gtf} -o {output} -A {params.tab_file} >> {log} 2>&1
         chmod ago+rwx -R {output} >> {log} 2>&1
         """
 if isSingleEnd() == True:
