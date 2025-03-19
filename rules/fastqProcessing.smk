@@ -21,8 +21,6 @@ include: "qc.smk"
 include: "qc_pe.smk"
 include: "pe_processing.smk"
 include: "common.smk"
-#
-
 
 
 def getSample_names_post_mapping():# maybe wildcards ne
@@ -86,20 +84,22 @@ def getOutput():
         all.extend(expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()))
     if config["jellyfish"]["jellyfish_active"]:
         all.extend(expand("{out}/jellyfish/{file}_trimmed_jf.hist",out=outputfolder,file=sample_names))
-        
+        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))            
+
     if config["blast"]["blast_active"]:
         all.extend(expand("{out}/blast/blast_report_{file}.tsv",out=outputfolder,file=sample_names))
+        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
 
     if config["cutadapt"]["cutadapt_active"]:
         all.extend(expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=sample_names))
         all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
-        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))            
     
     if config["crypt4gh"]["crypt4gh_active"]:
         all.extend(expand("{out}/encrypted_fastqs/{file}_processed.fastq.gz.c4gh",out=outputfolder,file=sample_names))
 
     if config["kraken2"]["kraken2_active"]:
         all.extend(expand("{out}/kraken2/{file}.report",out=outputfolder,file=sample_names))
+        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
 
     if config["transfer"]["transfer_active"]:
         all.extend(expand("{out}/transfer/transfer_log.log",out=outputfolder))
@@ -112,11 +112,11 @@ def getOutput():
 
     if config["diamond"]["diamond_active"]:
         all.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+   
     if config["sortmerna"]["sortmerna_active"]:
         all.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
 
 
-# fq_rrna_free=outputfolder+"/sortmerna/{file}_non-ribosomal_rna.fq.gz",
     if not validRun or not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the bcl2fastq2 run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -124,20 +124,16 @@ def getOutput():
 
 
 def getFastQCs(wildcards):
-    fastQCs = list()# if we cutadapt, make the list empty, then we only want fastqc from the cutadapt output
+    fastQCs = list()
     fastQCs.extend(expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample_names))
     fastQCs.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     if config["rseqc"]["rseqc_mapping_active"]:
-        #fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
         fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=getSample_names_post_mapping()))
-        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) # test this 
-            #print("sample names from getFastQCs, maybe fixed:")
-            #print(sample_names)
+        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) 
     if config["rseqc"]["qualimap_on"]:
-        fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
+        fastQCs.extend(expand("{out}/qc/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping()))
     if config["rseqc"]["rseqc_modules_active"]:
-        fastQCs.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder)) # outputfolder+"/qc/rseqc/done.flag"
-    
+        fastQCs.extend(expand("{out}/qc/rseqc/done.flag",out=outputfolder)) 
     if config["umi_tools"]["umi_tools_active"]:
         fastQCs.extend(expand("{out}/fastqc/{file}.umis-extracted_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     elif config["cutadapt"]["cutadapt_active"]:
@@ -160,7 +156,7 @@ def getFastQCs(wildcards):
 
 
 def get_raw_FastQCs(wildcards):
-    fastQCs_raw = list()# if we cutadapt, make the list empty, then we only want fastqc from the cutadapt output   
+    fastQCs_raw = list()   
     fastQCs_raw.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     return fastQCs_raw
 
@@ -177,9 +173,6 @@ rule all:
 if isSingleEnd() == True:
 
 
-
-# need to build the same for pe aswell
-
     def get_mapping_input(wildcards):
         if config["sortmerna"]["sortmerna_active"]:
             mapping_se_fastq=outputfolder+"/sortmerna/{file}_non-ribosomal_rna.fq.gz"
@@ -194,12 +187,8 @@ if isSingleEnd() == True:
 
     rule cutadapt:
         input:
-        # change this to if paired end, only the R1 as input
             outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
-            #fastq_list=get_cutadapt_input_files
         params:
-            #fastq_input=get_pe_trimming,
-            #input_fastqs=get_cutadapt_input_string,
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],
             out=outputfolder,
@@ -236,7 +225,6 @@ if isSingleEnd() == True:
         message: "mapping processed sequence data with STAR..."
 
         params:
-            # optional parameters
             extra="--outSAMtype BAM SortedByCoordinate --quantMode GeneCounts --sjdbGTFfile {} {}".format(
                 config["rseqc"]["gtf_file"], config["rseqc"]["other_params"]),
             outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/"+w.file)+"/",
@@ -281,18 +269,12 @@ if isSingleEnd() == True:
             crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.fq_in} > {output.c4gh_out} 2>{log}
             sha256sum {output} >>{params.checksum_file}
             """
-# crypt4gh encrypt --sk bob.sec $(for i in /pfad/zu/den/keys/*.pub; do echo --recipient_pk $i; done) < test > file.c4gh
-
-
-
-
 
 
 rule FastQC_untrimmed:
     input:
         samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
     params:
-    #    path=getPath,
         fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
         fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
         html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
@@ -318,17 +300,6 @@ rule FastQC_untrimmed:
         mv {params.zip} {output.zip}
         mv {params.html} {output.html}
         """
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -432,7 +403,7 @@ rule stringtie:
 
     output:
         stringtie_out_file=outputfolder+"/stringtie/transcripts_{file}.gtf"
-    shell:# stringtie -p 32 bam  -g ../mm39.ncbiRefSeq.gtf -o stringtie_out_2
+    shell:
         """
         mkdir -p {params.stie_log_folder}
         mkdir -p {params.out_folder} >> {log} 2>&1
@@ -497,19 +468,12 @@ if isSingleEnd() == True:
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input} --threads {threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string}
             """
-# #nice sortmerna --ref rfam-5.8s-database-id98.fasta --ref silva-arc-23s-id98.fasta --ref silva-bac-23s-id98.fasta --ref silva-euk-28s-id98.fasta --reads ../../612/612-3_processed.fastq.gz --threads 64 --workdir ./sortmerna-workdir_test_13 --aligned rRna_reads_test_ --fastx --other non_rRna_reads_test_
-
-
-# next: nice centrifuge -x nt -U ../../run_2/Batch_2/612-15_S3_R1_001.fastq.gz --out-fmt tab -q -p 32 --mm -S test_classification_test_nt_db.out --report-file centrifuge_mouse_nt_dp.report -k 1 
-
-
 
 if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
     rule umi_extract:
         input:
             outputfolder+"/untrimmed_fastq/{file}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
         params:
-            #path=getPath,
             umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
             extended_name=config["umi_tools"]["extended_name"],
             outputf=outputfolder+"/umi_extract",
@@ -667,7 +631,6 @@ rule jellyfish:
         jellyfish histo -o {output.hist_file} -f {params.mer_countsfile} 2>{log}
         jellyfish stats {params.mer_countsfile} >{params.stats_file}
         """
-# next, motus: motus                                      2.0.1  py27_1 
 
 
 rule biobloom:
@@ -685,7 +648,7 @@ rule biobloom:
         biobloom_summary=outputfolder+"/biobloom/biobloom_results_{file}_summary.tsv",
     log:
         outputfolder+"/logs/biobloom/biobloom_log_{file}.log"
-    threads: config["biobloom"]["biobloom_threads"]# https://github.com/nf-core/rnaseq/blob/master/bin/dupradar.r
+    threads: config["biobloom"]["biobloom_threads"]
     conda:
         p+"/envs/biobloom.yaml"
     message: "biobloom: filtering fastq.gz files with biobloom kmer filters for sequence species estimation..."
@@ -786,9 +749,9 @@ rule multiqc_raw:
        	p+"/envs/multiqc.yaml"
     shell:
     	"""
-    	cd {params.output_folder}
+    	cd {params.folder_to_check} # changed from delivering filelist to going into raw fastqc folder, then doing multiqc to prevent analysis_dir error
        	ls -f1 {params.folder_to_check}/*fastqc* >{params.list_file_raw}
-       	multiqc --filename {output} --fullnames -q --ignore-samples Undetermined* -x Undetermined*  -m 'fastqc'  --file-list {params.list_file_raw} --no-data-dir
+       	multiqc . --filename {output} --fullnames -q --ignore-samples Undetermined* -x Undetermined*  -m 'fastqc'  --no-data-dir
        	chmod ago+rwx -R {output}
         chmod ago+rwx -R {params.output_folder}
        	"""

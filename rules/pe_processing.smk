@@ -34,8 +34,6 @@ validRun = validateBefore(outputfolder)
 
 
 def get_pe_pairingsheet():
-    # get samplenamespostmapping, get r1 , get r2 and save all onto a file
-    # use the old structure
     R1 = list()
     R2 = list() 
     pe_samplenames = list ()
@@ -72,8 +70,6 @@ def isSingleEnd() -> bool:
 if isSingleEnd() == False:
 
 
-# add the second read, make mapping dependent on it
-# need to make sortmerna put out pe aswell before this works
 
 
     def get_mapping_input_pe1(wildcards):
@@ -114,8 +110,6 @@ if isSingleEnd() == False:
 
 
         threads: config["cutadapt"]["cutadapt_threads"]
-        #log:
-         #   outputfolder+"/logs/cutadapt/{short}_trimmed.log"
         message:
             "Run cutadapt"
         conda:
@@ -133,13 +127,9 @@ if isSingleEnd() == False:
         input:
             pe1 = get_mapping_input_pe1,
             pe2 = get_mapping_input_pe2
-            #pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            #pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
         output:
-            bams=outputfolder + "/star/{short}_pe_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
+            bams=outputfolder + "/star/{short}_pe_Aligned.sortedByCoord.out.bam", 
             tabs=outputfolder + "/star/{short}_pe_ReadsPerGene.out.tab"
-#        wildcard_constraints:
-#            file="(.*(?:_).*)"
         log:
             outputfolder+"/logs/star/{short}.log"
         params:
@@ -164,7 +154,7 @@ if isSingleEnd() == False:
 
 
     rule FastQC_pe:
-        input:  # need to test this if this works, also the input fun of kraken rule 
+        input:  
             outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
             outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         params:
@@ -193,9 +183,6 @@ if isSingleEnd() == False:
             chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
 
-#FastQC untrimmed missing
-
-
 
 
     rule FastQC_untrimmed_pe:
@@ -203,7 +190,6 @@ if isSingleEnd() == False:
             outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
             outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
         params:
-        #    path=getPath,
             fastp_report = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.html",
             fastp_json = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.json",
             html = outputfolder+"/fastqc_untrimmed/{short}_fastqc.html",
@@ -267,7 +253,6 @@ if isSingleEnd() == False:
         input:
             sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
             sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
-            #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
         params:
             ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
             fq_rrna_string=outputfolder+"/sortmerna/{short}_ribosomal_rna",
@@ -280,14 +265,12 @@ if isSingleEnd() == False:
             fq_rrna2=outputfolder+"/sortmerna/{short}_ribosomal_rna_rev.fq.gz",
             fq_rrna_free2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz",
 
-# what the names should be
             out_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
             out_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
             out_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",
             out_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz",
 
         output:
-        # mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz"
             out_fq_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
             out_fq_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
             out_fq_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",
@@ -310,8 +293,7 @@ if isSingleEnd() == False:
             mv {params.fq_rrna_free2} {params.out_rrna_free2}
             """
 
-#  mv non_rRNA_reads_fwd.f*q.gz ${prefix}_1.non_rRNA.fastq.gz
-#        mv non_rRNA_reads_rev.f*q.gz ${prefix}_2.non_rRNA.fastq.gz
+
 
 
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default

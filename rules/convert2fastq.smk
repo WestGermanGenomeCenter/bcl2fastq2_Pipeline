@@ -6,7 +6,7 @@ from helper import validateSamplesheet, validateOutput, validateProjectNum
 import pandas as pd
 import re
 # just to keep the rules more readable
-dirname=os.path.dirname
+#dirname=os.path.dirname
 
 min_version("6.4.0") # use-envmodules are not working in versions of 5.10.0 and below for clusters
 p = os.path.abspath(".")
@@ -106,7 +106,8 @@ rule prevent_revcomp:
 rule reverse_prevent_revcomp: # this rule only exists to reverse the edit of the runinfo.xml if the read3 revcomp option was activated
     input:
         demux_done=config["bcl2fastq"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv",
-        sample_sheet=config["bcl2fastq"]["SampleSheet"]
+        sample_sheet=config["bcl2fastq"]["SampleSheet"],
+        done_first_step=config["bcl2fastq"]["OutputFolder"]+"/revcomp_prevented.flag"
     params:
         folder_of_runxml=getParentDir,
         script_to_fix="scripts/reverse_revcomp_nexts2.sh",

@@ -8,3 +8,4 @@ channels:
 dependencies:
   - multiqc=1.23
   - typing_extensions
+  - jpeg
