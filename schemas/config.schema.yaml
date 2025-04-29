@@ -1,0 +1,83 @@
+$schema: 'http://json-schema.org/draft-04/schema#'
+
+description: snakemake configuration file
+
+bcl2fastq:
+  type: object
+  properties:
+    barcode_mismatch:
+      type: integer
+    SampleSheet:
+      type: string
+    OutputFolder:
+      type: string
+    options:
+      type: string
+    threads:
+      type: integer
+  required:
+    - barcode_mismatch
+    - SampleSheet
+    - OutputFolder
+    - threads
+
+others:
+  type: object
+  properties:
+    fastQC_threads:
+      type: integer
+    SHA256_threads:
+      type: integer
+  required:
+    - fastQC_threads
+    - SHA256_threads
+
+gocryptfs:
+  type: object
+  properties:
+    gocryptfs_version:
+      type: string
+    gocryptfs_active:
+      type: boolean
+  required:
+    - gocryptfs_version
+    - gocryptfs_active
+
+cutadapt:
+  type: object
+  properties:
+    cutadapt_active:
+      type: boolean
+    cutadapt_threads:
+      type: integer
+    adapters:
+      type: object
+    adapter_type:
+      type: object
+    other_params:
+      type: string
+  required:
+    - cutadapt_active
+    - cutadapt_threads
+
+rseqc:
+  type: object
+  properties:
+    rseqc_active:
+      type: boolean
+    gtf_file:
+      type: string
+    genomeDir: 
+      type: string
+    strandedness:
+      type: string
+    STAR_threads: 
+      type: integer
+    other_params: 
+      type: string
+  required:
+    - rseqc_active
+    - gtf_file
+    - genomeDir
+    - strandedness
+    - STAR_threads

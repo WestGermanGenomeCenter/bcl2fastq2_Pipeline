@@ -1,0 +1,12 @@
+__default__:
+  project: BenchMarking
+  walltime: 00:00:30
+  mem: 1G
+  cpus: 1
+  gpus: 0
+test:
+  walltime: 00:01:59
+  mem: 8G
+  cpus: 8
+  modules:
+    - Snakemake

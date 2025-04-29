@@ -1,0 +1,10 @@
+name: jellyfish
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/conda-forge
+  - http://conda.repo.test.hhu.de/bioconda
+  - http://conda.repo.test.hhu.de/main
+        
+dependencies:
+  - kmer-jellyfish=2.3.1
+  - gzip
