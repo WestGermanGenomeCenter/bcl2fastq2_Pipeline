@@ -1,0 +1,137 @@
+# this function is now using bcl convert, but the name is still the same. 
+# setting a samplesheet with a project number in the filename and a output folder are the only 2 mandatory things for each run!!
+demux:
+  SampleSheet:
+        "/gpfs/project/projects/bmfz_gtl/devices/illumina/nextseq2000/250320_VL00286_278_AAGGK52M5/1200_SampleSheet.csv" #this must be the sequencing device output folder if you want to demultiplex! put the samplesheet into that folder, including project number as part of the samplesheet filename.
+  OutputFolder:
+        "/gpfs/project/projects/bmfz_gtl/projects/1200_test_14_pp" # DO NOT end with / - just the complete dir path!!! 
+
+  other_params: "" # if umis are part of the barcode/adapter then the bcl-convert options are used. umi_tools needs to be inactive. 
+  options: "" # for this pipeline to work, no index reads .fastq files are allowed - the pe/se detector fails. please set CreateFastqForIndexReads in the settings to 0
+  bcl_convert_path: 
+ #       "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts/bcl-convert" # bcl-convert Version 00.000.000.4.2.7 
+        "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl_convert_436/bcl-convert" # bcl-convert Version 00.000.000.4.3.6
+  use_bcl2fastq: False
+  bcl2fastq2_path:
+          "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl2fastq"
+  bcl2fastq_mismatches: 1
+# if you did already demultiplex, activate this here.
+# put all .fastq.gz files into that folder
+# change outputfolder above and the fastq_folder below accordingly
+skip_demux:
+  skip_demux_active: False
+  fastq_folder: "/gpfs/project/projects/bmfz_gtl/projects/1162_Konkat/Konkat+Trimmed/fastq" #<- inside that folder are the .fastq.gz files expected then (untrimmed)
+
+### PE-Disclaimer:
+# if running pe-sequencing, the samples MUST be in ..._R1_001.fastq.gz/ ..._R2_001.fastq.gz naming, if not the pipeline will probably fail, rename the .fastq.gz files if needed!
+
+# for some reason, in some cases, bcl convert thinks that making the read 3 the reverse complement from the sequence in the samplesheet makes sense. 
+# we think differently, so there is a helper function that changes the settings in the RunInfo.xml. Keep this always inactive else you know better!
+prevent_revcomp:
+    prevent_revcomp_active: False
+
+# this adds a few plots after each demultiplexing that usually can just be seen in SAV. 
+interop_plots:
+    interop_plots_active: True    #only makes sense if demultiplexing is active, needs the illumina output folder
+    interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/bin"
+    interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
+      
+# cutadapt removes pre-defined adapters and can trim reads by quality/ length.
+# for each adapter sequence an adapter_type needs to be added aswell!       
+cutadapt: 
+  cutadapt_active: True
+  adapters: 
+    - AGATCGGAAGAGCACACGTCTGAACTCCAGTCA    
+    - CTGTCTCTTATACACATCT
+  adapter_type: 
+    - b # b for can be at both ends, a and g are for adapters expected on specific ends. b makes it more general, filtering a little better
+    - b
+  other_params: "--minimum-length 25 --quality-cutoff 5 -n 2" # very conservative, should work with any assay.
+
+# this also enables qualimap by default, that also does rna-seq mapping qc. for qualimap to work right a reference genome and gtf file from ensembl work best. this also enables featureCounts and stringtie, 2 tools that quantify the star output to count matrices.
+mapping: # for this to work, cutadapt needs to be active 
+  mapping_active: True
+#  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
+#  genomeDir: "//gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl"
+  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl/Mus_musculus.GRCm39.111.gtf"
+  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl"
+  other_params: ""
+  stranded: "-s 1" # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1"
+  stringtie_on: True # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
+  rseqc_active: True
+  
+# preseq is a tool to estimate sequencing saturation
+# this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
+preseq:
+    preseq_active: True # only works when mapping is active, needs no references 
+
+# umi_tools is used in two steps to first move the umis from a defined position of the trimmed read to the read header inside the .fastq.gz files
+# and then after mapping with star deduplicate the mapped reads based on position and umi in the .bam files 
+umi_tools: # for this to work, cutadapt needs to be active 
+  umi_tools_active: True
+ # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read
+  pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! 
+  pattern2: '""' # umi pattern for the second read if needed, only possible in paired-end sequencing setups
+
+# blast is used as a quick proxy for sample species estimation. only a small subset are blasted (blastn ) versus a reference-only database that is quite small only for trimmed reads as the adapter can confuse its results.
+# outputs a table and a summary file. also subsamples reads to speedup the process for each input file. 
+blast: # for this to work, cutadapt needs to be active
+    blast_active: True    #
+    blast_db: "/gpfs/project/projects/bmfz_gtl/software/blast/bigger_blastdb/bmfz_blast_big_db" # also possible: /gpfs/project/projects/bmfz_gtl/software/blast/nt /gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa much smaller, but annotated
+    blast_script_dir: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
+
+# kraken2 is used to identify the species sequenced. helpful for contamination detection.based on kmers. using a shared database! 
+# since it needs 180gb of ram, these jobs are slow to start on the hpc
+kraken2:
+  kraken2_active: False   #
+  kraken2_database: "/gpfs/project/databases/Kraken2-2022-09-28/kraken_db_plus" # also possible: /gpfs/project/databases/Kraken2_refseq+hfmv # also possible: /gpfs/project/projects/bmfz_gtl/software/Kraken
+
+# jellyfish is used to compute 21-mers for DNA samples. This can be used to check quality and ploidity of samples.
+# use for whole-genome sequencing assays
+jellyfish:
+  jellyfish_active: True #
+
+# biobloom is for taxonomic classification of reads based on k-mers. needs one new biobloom filter for each species screened for.
+# use only if kraken, diamond and blast are non-overlapping nor conclusive
+biobloom:
+  biobloom_active: False
+  biobloom_filter_dir: "/gpfs/project/projects/bmfz_gtl/databases/biobloom/"
+  biobloom_filters: '"Acetobacter_tropicalis.bf Amborella_trichopoda.bf Aquilegia_eximia.bf arabidopsis_tair10.bf Aspergillus_flavus.bf bac_subtilis_168.bf c_elegans.bf coffee.bf cottus_rhenaus.bf crayfish_gca.bf eColi_mg16.bf elephant_seal.bf fruitfly.bf fungus.bf human_hs1.bf Leishmania_major.bf lichen.bf mite.bf moss_Phypa_V3.bf mouse_mm39.bf mycoplasma_hyopneumoniae.bf Plasmodium_falciparum.bf rat_rn7.bf soybean_GlyMax.bf Toxoplasma_gondii.bf wheat.bf yeast_R64.bf Yersinia_kristensenii.bf zebrafish.bf "'
+
+# diamond is much more efficient then blast, but here works only on protein sequences.
+# much faster than blast, kraken or biobloom, needs cutadapt to be active
+diamond:
+  diamond_active: True  # does not work with pe runs
+  diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
+
+
+# sortmerna counts rRNA from input files, splitting the .fastq in the process. this does not filter before mapping, so all reads get mapped regardless!
+# needs cutadapt and/ or umi_tools to be active
+sortmerna:
+  sortmerna_active: True
+  sortmerna_reference_list: '  --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5.8s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-28s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-18s-id95.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-16s-id90.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-16s-id95.fasta'
+
+
+# crypt4gh encryption of umi_extract/cutadapt output files. needs both files to be present on the same filesystem as files
+# use only for human data, only transfer the files in the /encrypted_fastqs/ folder 
+crypt4gh:
+  crypt4gh_active: True
+  crypt4gh_own_private_key: "/home/daric102/daric102_nop.sec"
+  crypt4gh_client_public_key_dir: "/gpfs/project/projects/bmfz_gtl/software/c4gh_public_keys/" # recipient and all gtl public keys that can decrypt later
+
+# not used for now, can transfer only unencrypted folders to places such as notfallserver. needs a login-less connection to work.
+transfer:
+  transfer_active: False
+  transfer_to: "134.99.204.8:/mnt/data/pipelines/"
+  transfer_as: "daniel@"
+
+# fastqc also now adds a fastp report. there some additional infos that can be found such as the base-specific phred score for each .fastq file.
+others:
+
+# use this only when absolutely needed, in a screen session! pw needs to be manually typed in after all analysis are done.
+gocryptfs:
+  gocryptfs_active: False
+  gocryptfs_version: gocryptfs/1.7.1
+
+# this file needs to be updated regulary - manually for now
+software_versions_file: "/gpfs/project/projects/bmfz_gtl/software/software_tests/update_2025/envs/software_mqc_versions.yml"
