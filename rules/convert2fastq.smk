@@ -345,7 +345,7 @@ rule interop_plots:
     params:
         interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
-        output_dir=config["demux"]["OutputFolder"]+"/interop_plots/",
+        output_dir=config["demux"]["OutputFolder"]+"/interop_plots",
         script_interop=config["interop_plots"]["interop_script_path"]+"/interop_plots.sh",
         raw_files_place=getParentDir        
 

@@ -32,8 +32,8 @@ prevent_revcomp:
 # this adds a few plots after each demultiplexing that usually can just be seen in SAV. 
 interop_plots:
     interop_plots_active: True    #only makes sense if demultiplexing is active, needs the illumina output folder
-    interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/bin"
-    interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
+    interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/interop-1.4.0-Linux-GNU/bin" # to get the files: go here: https://github.com/Illumina/interop/releases/tag/v1.4.0, download the .tar.gz, unpack, then the in bin/ included files need to be in the folder here
+    interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/software_tests/update_2025/scripts"
       
 # cutadapt removes pre-defined adapters and can trim reads by quality/ length.
 # for each adapter sequence an adapter_type needs to be added aswell!       
@@ -97,7 +97,7 @@ diamond:
   diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
 
 
-# sortmerna counts rRNA from input files, splitting the .fastq in the process. this does not filter before mapping, so all reads get mapped regardless! # needs cutadapt and/ or umi_tools to be active
+# sortmerna counts rRNA from input files, splitting the .fastq in the process.  # needs cutadapt and/ or umi_tools to be active
 sortmerna:
   sortmerna_active: True
   sortmerna_reference_list: '  --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5.8s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-28s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-18s-id95.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-16s-id90.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-16s-id95.fasta'

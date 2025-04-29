@@ -1,10 +1,10 @@
-# demultiplexing Pipeline for Illumina Machines with extensive QC
+# Demultiplexing Pipeline for Illumina Machines with extensive QC
 
 
 This Pipeline uses Snakemake 8 on a PBS Pro HPC Cluster to Demultiplex Illumina Sequencing Runs, either with bcl2fastq2 or the newer bclconvert.
 
 
-##  deployment
+#  Deployment
 if you are HILBERT HPC user:
 
  `bash setup_pipeline.sh`
@@ -37,7 +37,7 @@ For example DAGs and Reports, check the examples/ folder inside this repo
 - can deal with .fastq files as input (if demultiplexing already happened), for this enable the skip_demux part in the config.yaml
 - can deal with paired and and single read sequencing setups. Diamond does not work with pe setups, and the naming scheme is strict (see config.yaml)
 - if qc steps are enabled that require trimming of adapters, but trimming is disabled the pipeline will trimm regardless. This is to ensure the proper input quality of data for each step.
-- The mayor focus here is demultiplexing of MiSeq/Nextseq2000/NovaseqX and do RNASeq analysis until transcript count tables are created
+- The major focus here is demultiplexing of MiSeq/Nextseq2000/NovaseqX and do RNASeq analysis until transcript count tables are created
 - can deal with UMIs, even in paired end setups (check config.yaml)
 - collects qc of raw sequencing output in a multiqc file, and output of all analysis steps in a multiqc_report_complete file.
 - general deletion of data does not happen. You need to cleanup on your own.
@@ -47,3 +47,17 @@ For example DAGs and Reports, check the examples/ folder inside this repo
 - includes many QC steps to identify contamination, from most reliable to least: Kraken , BioBloom, BLAST, Diamond. Please be aware that either results are dependent on Quality of the input and the Database used.
 - automatically scales up the ressources for each job after a failed attempt. after 3 attempts it gives up - you can configure this in your snakemake profile.
 - many results of analyses are shown in the multiqc report complete file, but a lot of tools also put out more data then multiqc catches. Check the output folder after each run for more!
+
+# Setup steps needed
+- install the correct star version and create a reference genome, include a annotation .gtf file that you can use later in the pipeline during this step. Reference genomes can be downloaded from ncbi, ensembl or anywhere else. Download .fa(sta) and corresponding .gtl file, then do `star --runMode GenomeGenerate ` . the resulting Folder and gtf file can then be used in the config.yaml
+- download binaries for bcl2fastq2 and/or bclconvert. This is sadly only available on the illumina website with a login. The complete path to the executables can then be filled in to the config.yaml
+- create / download kraken2 / biobloomtools / blast / diamond / sortmerna databases. Most tools have downloadable databases available. Best is to start there and then adjust to your needs. The file paths can then be filled into the config.yaml. For biobloomtools, each organism needs one .bf file that need to be chained one after the other. All biobloomfilter .bf files need to be in the same, biobloom_filter_dir that also needs to be filled into the config.yaml file. Sortmerna needs also a special way: the reference list needs to be split by --ref for each specific file like so:
+config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /path/to/file2 --ref /path/to/file3' ... and so on 
+- all software should be handed by snakemake / conda except: 
+    - bcl2fastq2
+    - bclconvert
+    - illumina_interop
+- blast_script_dir, interop_script_path are the folder scripts/ in this repo, so filling in only "scripts/" should also work for both
+- start with only minimal options enabled, then enable more as you get familiar with how to fill in / use the config.yaml file. If you need inspiration, check the examples/ folder included in this dir.
+
+

@@ -11,3 +11,4 @@ nice $1/plot_flowcell $2 | gnuplot
 nice $1/plot_by_lane $2 | gnuplot
 nice $1/plot_by_cycle $2 | gnuplot
 nice $1/plot_sample_qc $2 | gnuplot
+nice $1/index_summary $2 --csv=1 >illumina-interop_index_summary.csv

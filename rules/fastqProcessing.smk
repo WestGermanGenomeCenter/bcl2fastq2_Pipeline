@@ -564,7 +564,8 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
         params:
             out=outputfolder,
             sorted_bam=outputfolder+"/star/{file}_sorted.Aligned.sortedByCoord.out.bam",
-            logfolder=outputfolder+"/logs/umi_tools/"
+            logfolder=outputfolder+"/logs/umi_tools/",
+            output_stats=outputfolder+"/logs/umi_tools/{file}_dedup_stats.out",
         log:
             outputfolder+"/logs/umi_tools/{file}.umi_dedup.log"
         conda:
@@ -583,7 +584,7 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             mkdir -p {params.logfolder}
             samtools sort --threads {resources.threads} {input} -o {params.sorted_bam} 2>{log}
             samtools index {params.sorted_bam} 2>{log}
-            umi_tools dedup -I {params.sorted_bam} --output-stats={log} -S {output} 2>{log}
+            umi_tools dedup -I {params.sorted_bam} --output-stats={params.output_stats} -S {output} --log={log}
             #chmod ago+rwx {params.out} 2>{log}
             """
 

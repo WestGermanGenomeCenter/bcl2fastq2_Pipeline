@@ -7,4 +7,3 @@ channels:
 dependencies:
   - star=2.7.10b
   - samtools  
-#  - qualimap  # this one is tricky to install on the hpc, usually needs a manual installation with mamba install qualimap --no-deps, check the error messages for the star env name

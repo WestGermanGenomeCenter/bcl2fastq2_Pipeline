@@ -105,7 +105,7 @@ diamond:
   diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
 
 
-# sortmerna counts rRNA from input files, splitting the .fastq in the process. this does not filter before mapping, so all reads get mapped regardless!
+# sortmerna counts rRNA from input files, splitting the .fastq in the process. 
 # needs cutadapt and/ or umi_tools to be active
 sortmerna:
   sortmerna_active: True
