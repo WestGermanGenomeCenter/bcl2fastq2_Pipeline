@@ -167,7 +167,7 @@ if not config["skip_demux"]["skip_demux_active"]:
             samplesheet_errors = config["demux"]["OutputFolder"]+"/SampleSheet_check.out"
         params:
             infolder = getParentDir,
-            additionalOptions=[" "+config["demux"]["options"],""][len(config["demux"]["options"])>0],
+            additionalOptions=config["demux"]["options"],
             bcl_convert_path = config["demux"]["bcl_convert_path"],
             outfastqs = config["demux"]["OutputFolder"] + "/*.fastq.gz", # we want to exclude the undetermined maybe here, maybe after the multiqc
             output_dir = config["demux"]["OutputFolder"],
@@ -184,14 +184,14 @@ if not config["skip_demux"]["skip_demux_active"]:
         resources:
             threads=lambda wildcards, attempt: attempt * 16,
             time_hrs=lambda wildcards, attempt: attempt * 4,
-            mem_gb=lambda wildcards, attempt: attempt * 96
+            mem_gb=lambda wildcards, attempt: attempt * config["demux"]["demux_try1_gb"]
         conda:
             p+"/envs/demux.yaml"
         shell:
             """
             mkdir -p {params.output_dir}
             chmod ago+rwx -R {params.output_dir}
-            {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions} --no-lane-splitting true --output-directory {params.output_dir} --force --bcl-num-decompression-threads {resources.threads} --bcl-num-conversion-threads {resources.threads} --bcl-num-compression-threads {resources.threads} --bcl-num-parallel-tiles {resources.threads} >{log} 2>&1
+            {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force --bcl-num-decompression-threads {resources.threads} --bcl-num-conversion-threads {resources.threads} --bcl-num-compression-threads {resources.threads} --bcl-num-parallel-tiles {resources.threads} >{log} 2>&1
             cp {input[0]} {params.output_dir}
             mkdir -p {params.output_dir} && mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir}
             mv {params.undetermined} {params.output_dir}
@@ -206,7 +206,7 @@ if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
         params:
             barcode_mismatches = config["demux"]["bcl2fastq_mismatches"],
             infolder = getParentDir,
-            additionalOptions=[" "+config["demux"]["options"],""][len(config["demux"]["options"])>0],
+            additionalOptions=config["demux"]["bcl2fastq_options"],
             out = config["demux"]["OutputFolder"],
             fastq_destination=config["demux"]["OutputFolder"]+"/untrimmed_fastq/",
             exec_path = config["demux"]["bcl2fastq2_path"]
@@ -227,7 +227,7 @@ if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
             """
             mkdir -p {params.out}
             chmod ago+rwx -R {params.out}
-            {params.exec_path} -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --no-lane-splitting --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {resources.threads} -p {resources.threads} 2> {log[0]}
+            {params.exec_path} -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {resources.threads} -p {resources.threads} 2> {log[0]}
             cp {input[0]} {params.out}
             mkdir -p {params.fastq_destination}
             mv {params.out}/*/*.fastq.gz {params.fastq_destination}

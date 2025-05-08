@@ -96,6 +96,7 @@ def getOutput():
     
     if config["crypt4gh"]["crypt4gh_active"]:
         all.extend(expand("{out}/encrypted_fastqs/{file}_processed.fastq.gz.c4gh",out=outputfolder,file=sample_names))
+        all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
 
     if config["kraken2"]["kraken2_active"]:
         all.extend(expand("{out}/kraken2/{file}.report",out=outputfolder,file=sample_names))

@@ -59,5 +59,5 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
     - illumina_interop
 - blast_script_dir, interop_script_path are the folder scripts/ in this repo, so filling in only "scripts/" should also work for both
 - start with only minimal options enabled, then enable more as you get familiar with how to fill in / use the config.yaml file. If you need inspiration, check the examples/ folder included in this dir.
-
+- kraken2 is okay with UMIs, biobloom, blast and diamond not. This is why kraken2 is started before the UMIs are potentially moved to the .fastq header, giving you a sooner glimpse of potential contamination
 

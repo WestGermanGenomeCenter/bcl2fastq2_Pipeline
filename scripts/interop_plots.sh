@@ -13,3 +13,5 @@ nice $1/plot_by_cycle $2 | gnuplot
 nice $1/plot_sample_qc $2 | gnuplot
 nice $1/imaging_table $2 >imaging_table.csv
 nice $1/index-summary $2 --csv=1 >illumina-interop_index_summary.csv
+nice $1/dumptext $2 >interop_textdump.csv
+nice $1/summary $2 --csv=1 >interop_summary.csv

@@ -36,7 +36,7 @@ def validateProjectNum(samplesheet):
     if projectNum:
         return projectNum.group(0)
     else:
-        return ""
+        return "There is no ProjectNumber in the SampleSheet name. Please repeat with SampleSheet_9999.csv if 9999 is the current project."
 
 
 def adaptersToStringParams(adapters,type):
