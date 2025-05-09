@@ -11,7 +11,7 @@ if you are HILBERT HPC user:
 
 if not: 
  - create your snakemake profile if needed
- - create a conda env with `conda env create -f smk8_environment.yml`
+ - create a conda env with `conda env create -n smk8 -f smk8_environment.yml`
  - `conda activate smk8 ` <- this env should then include snakemake 8.x.x
 
 
@@ -61,3 +61,33 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
 - start with only minimal options enabled, then enable more as you get familiar with how to fill in / use the config.yaml file. If you need inspiration, check the examples/ folder included in this dir.
 - kraken2 is okay with UMIs, biobloom, blast and diamond not. This is why kraken2 is started before the UMIs are potentially moved to the .fastq header, giving you a sooner glimpse of potential contamination
 
+# Tools included / steps available
+- demultiplex with bcl2fastq2 or bclconvert (needs to be available as executable)
+- FastQC, Fastp, sha256sums and MultiQC of raw demultiplexing output 
+- ability to automatically reverse-complement the samplesheet info for second index read
+- can automatically skip demultiplexing if .fastq.gz files are already somewhere
+## Second part
+- Illumina Interop and demux stats in second MultiQC report (..report_complete.html)
+- cutadapt
+- umi_tools
+- sortmerna
+- FastQC, MultiQC, sha256sums of trimmed/Umis moved to header / rRNA removed .fastq files
+- contamination detection with:
+    - Kraken2
+    - BioBloom
+    - BLAST
+    - Diamond
+- Jellyfish for k-mer distribution checks
+- encryption of .fastq files with crypt4gh, encryption of all output with gocryptfs also possible
+- automatic transport of all output data to other server/ scp adress
+## RNA-Seq Workflow in the second part
+- Mapping with STAR
+- RseQC and samtools-plots for mapping output QC
+- preseq for sequencing saturation estimation
+- stringtie
+- featurecounts for final transcript count table
+
+- can work with pe/se data, can also work with dual UMI setup
+- ends in a final MultiQC report that includes a overview of all analysis done and a list of used software
+- copies samplesheet / config.yaml / software versions into output folder
+- includes creating snakemake rulegraphs and reports for each run
