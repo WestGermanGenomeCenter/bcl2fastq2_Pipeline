@@ -152,7 +152,7 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
     if config["diamond"]["diamond_active"]:
         fastQCs.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
-    if config["rseqc"]["qualimap_on"]:
+    if config["mapping"]["qualimap_on"]:
         fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
     if config["sortmerna"]["sortmerna_active"]:
         fastQCs.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
