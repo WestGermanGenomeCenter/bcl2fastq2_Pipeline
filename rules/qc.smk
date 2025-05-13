@@ -54,7 +54,7 @@ rule rseqc_gtf2bed:
         config["mapping"]["gtf_file"],
     output:
         bed=outputfolder+"/rseqc/annotation.bed",
-        db=temp("results/rseqc/annotation.db")
+        db=temp(outputfolder+"/rseqc/annotation.db")
     params:
     	qc_dir=outputfolder+"",
     	rseqc_dir=outputfolder+"/rseqc",

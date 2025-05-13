@@ -87,6 +87,8 @@ def getOutput():
         
     if config["mapping"]["rseqc_active"]:
         all.extend(expand("{out}/rseqc/done.flag",out=outputfolder)) # outputfolder+"/rseqc/done.flag"
+    if config["mapping"]["qualimap_on"]:
+        all.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output  
     if config["blast"]["blast_active"]:
         all.extend(expand("{out}/blast/blast_report_{file}.tsv",out=outputfolder,file=sample_names))
 
@@ -150,6 +152,8 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
     if config["diamond"]["diamond_active"]:
         fastQCs.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+    if config["rseqc"]["qualimap_on"]:
+        fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
     if config["sortmerna"]["sortmerna_active"]:
         fastQCs.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
 
@@ -589,6 +593,28 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             #chmod ago+rwx {params.out} 2>{log}
             """
 
+rule Qualimap:
+    input:
+        bams =outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam"
+    params:
+    	gtf=config["mapping"]["gtf_file"],
+    	qualimap_out =  outputfolder+"/qualimap/{file}",
+    	qualimap_folder = outputfolder+"/qualimap",
+    	qualimap_logfolder = outputfolder+"/logs/qualimap"
+    log:
+    	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
+    output:
+    	qualimap_report = outputfolder+"/qualimap/{file}/qualimapReport.html"
+    conda:
+    	p+"/envs/Qualimap.yaml"
+    shell:
+    	"""
+    	mkdir -p {params.qualimap_logfolder}
+    	mkdir -p {params.qualimap_folder} >> {log} 2>&1
+    	mkdir -p {params.qualimap_out} >> {log} 2>&1
+    	qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
+    	chmod ago+rwx -R {output} >> {log} 2>&1  
+    	"""
 
 
 rule featurecounts:
