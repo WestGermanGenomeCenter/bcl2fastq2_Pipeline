@@ -607,6 +607,10 @@ rule Qualimap:
     	qualimap_report = outputfolder+"/qualimap/{file}/qualimapReport.html"
     conda:
     	p+"/envs/Qualimap.yaml"
+    resources:
+        threads=lambda wildcards, attempt: attempt * 2,
+        time_hrs=lambda wildcards, attempt: attempt * 4,
+        mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
     	"""
     	mkdir -p {params.qualimap_logfolder}
