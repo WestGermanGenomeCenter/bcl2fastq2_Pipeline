@@ -58,8 +58,8 @@ mapping: # for this to work, cutadapt needs to be active
   other_params: ""
   stranded: "-s 1" # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1"
   stringtie_on: True # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
-  rseqc_active: True
-  qualimap_on: False
+  rseqc_active: True #  qc of mapping, somewhat redundant to qualimap
+  qualimap_on: False # for this to work you need to manually create Qualimap env with qualimap=2.3 installed
 # preseq is a tool to estimate sequencing saturation # this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
 preseq:
     preseq_active: True # only works when mapping is active, needs no references 

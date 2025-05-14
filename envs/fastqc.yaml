@@ -9,4 +9,4 @@ channels:
 dependencies:
   - perl=5.32.1
   - fastqc=0.12.1
-  - fastp
+  - fastp=0.24.1

@@ -6,6 +6,6 @@ channels:
   - http://conda.repo.test.hhu.de/main
 
 dependencies:
-  - pigz=2.6
-  - kraken2=2.1.2
-  - kat
+  - pigz=2.8
+  - kraken2=2.14
+  - kat=2.4.2

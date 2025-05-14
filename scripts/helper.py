@@ -17,6 +17,7 @@ def validateOutput(outputfolder):
     Check for a few possible input errors and give an appropriate response
     """
     if outputfolder.endswith('/'):
+        print("OutputFolder in config.yaml ends with / Thats an error. Remove the / and retry.")
         outputfolder = outputfolder[:-1]
         if not os.access(dirname(outputfolder), os.W_OK):
             print("Couldn't be started. You don't have write permission for the following path %s" % (dirname(outputfolder),))

@@ -99,6 +99,7 @@ rule rseqc_main:
         fpkm_out=outputfolder+"/rseqc/{file}_rseqc_fpkm_count.tsv",
         prefix_readdup=outputfolder+"/rseqc/{file}.readdup",
         prefix_readgc=outputfolder+"/rseqc/{file}.readgc",
+        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody",
         prefix=lambda w, output: output[0].replace(".junctionSaturation_plot.pdf", ""),
 
 
@@ -120,7 +121,7 @@ rule rseqc_main:
         read_distribution.py -r {input.bed} -i {input.bam} > {output.read_dis} 2> {log}
         read_duplication.py -i {input.bam} -o {params.prefix_readdup} >> {log} 2>&1
         read_GC.py -i {input.bam} -o {params.prefix_readgc} >> {log} 2>&1
-
+        geneBody_coverage.py -r {input.bed} -i {input.bam}  -o {params.prefix_bodycov}  >> {log} 2>&1
         """
 
 

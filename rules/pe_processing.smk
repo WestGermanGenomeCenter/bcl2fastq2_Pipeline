@@ -407,6 +407,7 @@ if isSingleEnd() == False:
         message:"sortmerna: removing rRNA reads from trimmed/ umi-moved .fastq files"
         shell:
             """
+            rm -rf {params.workdir}
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --out2 --other {params.fq_rrna_free_string} >> {log} 2>&1

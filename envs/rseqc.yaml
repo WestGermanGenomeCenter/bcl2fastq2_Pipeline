@@ -6,5 +6,5 @@ channels:
   - http://conda.repo.test.hhu.de/conda-forge
  
 dependencies:
-  - rseqc=5.0.1
+  - rseqc=5.0.4
   - libiconv=1.17

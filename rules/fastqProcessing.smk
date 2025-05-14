@@ -606,7 +606,15 @@ rule Qualimap:
     output:
     	qualimap_report = outputfolder+"/qualimap/{file}/qualimapReport.html"
     conda:
-    	p+"/envs/Qualimap.yaml"
+        "Qualimap" # sadly on the hpc the env needs to be created manually
+        # cd /gpfs/project/projects/bmfz_gtl/software/software_tests/update_2025/envs/
+        #conda env create Qualimap -f Qualimap.yaml -p /gpfs/project/projects/bmfz_gtl/software/software_tests/update_2025/envs
+        #conda activate Qualimap 
+        #conda install qualimap=2.3 --no-deps
+
+        #
+        #
+    	#p+"/envs/Qualimap.yaml"
     resources:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 4,

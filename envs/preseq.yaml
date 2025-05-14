@@ -6,6 +6,6 @@ channels:
   - http://conda.repo.test.hhu.de/main
         
 dependencies:
-  - preseq
-  - samtools
-  - bedtools
+  - preseq=3.2.0
+  - samtools=1.21
+  - bedtools=2.31.1

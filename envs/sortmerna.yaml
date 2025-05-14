@@ -6,4 +6,4 @@ channels:
   - http://conda.repo.test.hhu.de/main
         
 dependencies:
-  - sortmerna=4.3.6
+  - sortmerna=4.3.7
