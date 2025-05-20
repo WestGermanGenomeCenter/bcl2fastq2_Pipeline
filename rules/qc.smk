@@ -107,8 +107,8 @@ rule rseqc_main:
         p+"/envs/rseqc.yaml"
     resources:
         threads=lambda wildcards, attempt: attempt * 2,
-        time_hrs=lambda wildcards, attempt: attempt * 2,
-        mem_gb=lambda wildcards, attempt: attempt * 8
+        time_hrs=lambda wildcards, attempt: attempt * 3,
+        mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
         """
         junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncanno} >> {log} 2>&1

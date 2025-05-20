@@ -247,8 +247,7 @@ if isSingleEnd() == True:
             outp = lambda w: os.path.dirname(outputfolder+"/star/"+w.file+"/"+w.file)+"/",
             prefix = outputfolder + "/star/{file}_",
             genDir = config["mapping"]["genomeDir"],
-            qc_dir = outputfolder + "",
-            mapping_dir = outputfolder+"/mapping",
+            mapping_dir = outputfolder+"/star",
             fastqs=lambda w: getFastqs(w.file),
         resources:
             threads=lambda wildcards, attempt: attempt * 12,
@@ -259,7 +258,6 @@ if isSingleEnd() == True:
             p+"/envs/STAR.yaml"
         shell:
             """
-            mkdir -p {params.qc_dir}
             mkdir -p {params.mapping_dir}
             STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
             chmod ago+rwx -R {output} >> {log} 2>&1
@@ -597,10 +595,12 @@ rule Qualimap:
     input:
         bams =outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam"
     params:
-    	gtf=config["mapping"]["gtf_file"],
-    	qualimap_out =  outputfolder+"/qualimap/{file}",
-    	qualimap_folder = outputfolder+"/qualimap",
-    	qualimap_logfolder = outputfolder+"/logs/qualimap"
+        gtf=config["mapping"]["gtf_file"],
+        qualimap_out =  outputfolder+"/qualimap/{file}",
+        qualimap_folder = outputfolder+"/qualimap",
+        qualimap_logfolder = outputfolder+"/logs/qualimap",
+        bamqc_outfile=outputfolder+"/qualimap/{file}_bamqc.pdf",
+        bamqc_log=outputfolder+"/logs/qualimap/{file}_bamqc.log"
     log:
     	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
     output:
@@ -624,6 +624,7 @@ rule Qualimap:
     	mkdir -p {params.qualimap_logfolder}
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
+        qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
     	qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod ago+rwx -R {output} >> {log} 2>&1  
     	"""

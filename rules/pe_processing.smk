@@ -154,8 +154,7 @@ if isSingleEnd() == False:
                 config["mapping"]["gtf_file"], config["mapping"]["other_params"]),
             prefix = outputfolder + "/star/{short}_pe_001_",
             genDir = config["mapping"]["genomeDir"],
-            qc_dir = outputfolder + "/qc",
-            mapping_dir = outputfolder+"/qc/mapping",
+            mapping_dir = outputfolder+"/star",
 
         resources:
             threads=lambda wildcards, attempt: attempt * 12,
@@ -165,7 +164,6 @@ if isSingleEnd() == False:
             p+"/envs/STAR.yaml"
         shell:
             """
-            mkdir -p {params.qc_dir}
             mkdir -p {params.mapping_dir}
             STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.pe1} {input.pe2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
             chmod ago+rwx -R {params.mapping_dir} >> {log} 2>&1
@@ -410,7 +408,7 @@ if isSingleEnd() == False:
             rm -rf {params.workdir}
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
-            sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --out2 --other {params.fq_rrna_free_string} >> {log} 2>&1
+            sortmerna {params.ref_string} --reads {input.sort_1} --reads {input.sort_2} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --out2 --other {params.fq_rrna_free_string} --paired_in >> {log} 2>&1
             mv {params.fq_rrna1} {params.out_rrna1}
             mv {params.fq_rrna2} {params.out_rrna2}
             mv {params.fq_rrna_free1} {params.out_rrna_free1}

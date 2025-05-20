@@ -52,7 +52,7 @@ cutadapt:
 mapping: # for this to work, cutadapt needs to be active 
   mapping_active: True
   gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
-  genomeDir: "//gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl"
+  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl"
 #  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl/Mus_musculus.GRCm39.111.gtf"
 #  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl"
   other_params: ""
