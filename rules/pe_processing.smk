@@ -338,11 +338,17 @@ if isSingleEnd() == False:
 
        params:
            out_folder=outputfolder+"/diamond/",
-           out_sample_folder=outputfolder+"/diamond/{short}", # run diamond here
+           out_sample_folder1=outputfolder+"/diamond/{short}_R1_001/", # run diamond here
+           out_sample_folder2=outputfolder+"/diamond/{short}_R2_001/", # run diamond here
+
            diamond_ref_file=config["diamond"]["diamond_ref_file"],
-           textfile1=outputfolder+"/diamond/{short}/{short}_r1_diamond_output.txt",
-           textfile2=outputfolder+"/diamond/{short}/{short}_r2_diamond_output.txt",
-           diamond_summary_file=outputfolder+"/diamond/{short}_diamond_output_summary.txt",
+           textfile1=outputfolder+"/diamond/{short}_R1_001/{short}_r1_diamond_output.txt",
+           textfile2=outputfolder+"/diamond/{short}_R2_001/{short}_r2_diamond_output.txt",
+           #logfile_1=outputfolder+"/diamond/{short}_R1_001/diamond.log",
+           #logfile_2=outputfolder+"/diamond/{short}_R2_001/diamond.log",
+           diamond_summary_file1=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt",
+           diamond_summary_file2=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt"
+
        log:
            outputfolder+"/diamond/{short}.diamond.log"
        conda:
@@ -356,12 +362,13 @@ if isSingleEnd() == False:
        shell:
            """
            mkdir -p {params.out_folder} 2>{log}
-           mkdir -p {params.out_sample_folder}
-           cd {params.out_sample_folder}
-           diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile1} --query {input.in_1} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {log} 2>&1
-           diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile2} --query {input.in_2} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {log} 2>&1
-           cat {params.textfile1} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file}
-           cat {params.textfile2} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file}
+           mkdir -p {params.out_sample_folder1} && mkdir -p {params.out_sample_folder2} 2>{log}
+           cd {params.out_sample_folder1} 2>{log}
+           diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile1} --query {input.in_1} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {output.log_file1} 2>&1
+           cd {params.out_sample_folder2} 2>{log}
+           diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile2} --query {input.in_2} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {output.log_file2} 2>&1
+           cat {params.textfile1} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file1}
+           cat {params.textfile2} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file2}
 
            """
 
