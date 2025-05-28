@@ -34,6 +34,11 @@ For example DAGs and Reports, check the examples/ folder inside this repo
 - is setup to always use the config.yaml in the root folder
 - expects bcl2fastq2/bclconvert to be somewhere as executable (needs to be set in config.yaml)
 - always does some basic steps like sha256sums / fastqc + multiqc reports
+- is best to use one pipeline run per project and one project per sequencing run. That means if you have 2 or more projects in one flowcell/ sequencing run, you can eiter 
+    -- split the samplesheet by project, run the pipeline once for each project but get a big undetermined.fastq.gz file or
+    -- run once, but then mapping and all other after-mapping qc steps can only be made with one reference genome, and not one reference genome per project
+    -- in essence, split the samplesheet if you want to do mapping or even more and if you only want to do basic qc on all the included projects one samplesheet is also a solution
+    -- you can also demultiplex once, move/ copy the .fastq files and then use the skip_demux option to run the pipeline with one set of parameters for each project. This is the most ressource-efficient way for now.
 - can deal with .fastq files as input (if demultiplexing already happened), for this enable the skip_demux part in the config.yaml
 - can deal with paired and and single read sequencing setups. Diamond does not work with pe setups, and the naming scheme is strict (see config.yaml)
 - if qc steps are enabled that require trimming of adapters, but trimming is disabled the pipeline will trimm regardless. This is to ensure the proper input quality of data for each step.

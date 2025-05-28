@@ -4,7 +4,7 @@ source ~/conda/etc/profile.d/conda.sh
 conda activate smk8
 out="$(grep OutputFolder config.yaml -A1 | tail -n 1 | awk '{print $1}' | sed 's/"//g' )"
 mkdir -p $out
-time_exec="`date +"%d.%m.%Y-%T"`"
+time_exec="`date +"%Y_%m_%d_%I_%M_%p"`"
 snakemake -s rules/convert2fastq.smk --forceall --rulegraph | dot -Tpdf > $out/convert2fastq_rulegraph.$time_exec.pdf
 snakemake -s rules/convert2fastq.smk --profile pbs
 snakemake -s rules/convert2fastq.smk --report $out/convert2fastq_report.$time_exec.html

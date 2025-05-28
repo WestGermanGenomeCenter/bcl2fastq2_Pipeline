@@ -8,3 +8,4 @@ channels:
 dependencies:
   - rseqc=5.0.4
   - libiconv=1.17
+  - r-base

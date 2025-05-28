@@ -76,19 +76,19 @@ rule rseqc_main:
         bam=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam",
         bed=outputfolder+"/rseqc/annotation.bed",
     output:
-        junc_anno=outputfolder+"/rseqc/{file}.junctionanno.junction.xls",
-        junc_sat=outputfolder+"/rseqc/{file}.junctionsat.junctionSaturation_plot.pdf",
-        stats=outputfolder+"/rseqc/{file}.stats.txt",
-        inner_dis=outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance.txt",
-        infer_ex=outputfolder+"/rseqc/{file}.infer_experiment.txt",
-        read_dis=outputfolder+"/rseqc/{file}.readdistribution.txt",
-        dups=outputfolder+"/rseqc/{file}.readdup.DupRate_plot.pdf",
-        gc=outputfolder+"/rseqc/{file}.readgc.GC_plot.pdf"
+        junc_anno=outputfolder+"/rseqc/{file}.junctionanno.junction.bed",
+        junc_sat=outputfolder+"/rseqc/{file}.junctionsat.junctionSaturation_plot.r",
+        inner_dis=outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance_freq.txt",
+        dups=outputfolder+"/rseqc/{file}.readdup.DupRate_plot.r",
+        gc=outputfolder+"/rseqc/{file}.readgc.GC_plot.r"
 
 
     log:
         outputfolder+"/logs/rseqc/{file}.log"
     params:
+        read_dis=outputfolder+"/rseqc/{file}.readdistribution.txt",
+        infer_ex=outputfolder+"/rseqc/{file}.infer_experiment.txt",
+        stats=outputfolder+"/rseqc/{file}.stats.txt",
         extra=r"-q 255",  # STAR uses 255 as a score for unique mappers
         prefix_juncanno=outputfolder+"/rseqc/{file}.junctionanno",
         prefix_juncsat=outputfolder+"/rseqc/{file}.junctionsat",
@@ -99,9 +99,7 @@ rule rseqc_main:
         fpkm_out=outputfolder+"/rseqc/{file}_rseqc_fpkm_count.tsv",
         prefix_readdup=outputfolder+"/rseqc/{file}.readdup",
         prefix_readgc=outputfolder+"/rseqc/{file}.readgc",
-        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody",
-        prefix=lambda w, output: output[0].replace(".junctionSaturation_plot.pdf", ""),
-
+        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody"
 
     conda:
         p+"/envs/rseqc.yaml"
@@ -112,16 +110,16 @@ rule rseqc_main:
     shell:
         """
         junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncanno} >> {log} 2>&1
-        bam_stat.py -i {input.bam} > {output.stats} 2> {log}
+        bam_stat.py -i {input.bam} > {params.stats} 2> {log}
         junction_saturation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncsat}  >> {log} 2>&1
-        infer_experiment.py -r {input.bed} -i {input.bam} > {output.infer_ex} 2> {log}
+        infer_experiment.py -r {input.bed} -i {input.bam} > {params.infer_ex} 2> {log}
         read_NVC.py -i {input.bam} -o {params.nvc_outpre} >> {log} 2>&1
         FPKM_count.py -r {input.bed} -i {input.bam} -o {params.fpkm_out} >> {log} 2>&1
         inner_distance.py -r {input.bed} -i {input.bam} -o {params.prefix_innerdis} >> {log} 2>&1
-        read_distribution.py -r {input.bed} -i {input.bam} > {output.read_dis} 2> {log}
+        read_distribution.py -r {input.bed} -i {input.bam} > {params.read_dis} 2> {log}
         read_duplication.py -i {input.bam} -o {params.prefix_readdup} >> {log} 2>&1
         read_GC.py -i {input.bam} -o {params.prefix_readgc} >> {log} 2>&1
-        geneBody_coverage.py -r {input.bed} -i {input.bam}  -o {params.prefix_bodycov}  >> {log} 2>&1
+        #geneBody_coverage.py -r {input.bed} -i {input.bam}  -o {params.prefix_bodycov}  >> {log} 2>&1
         """
 
 
@@ -132,35 +130,23 @@ rule rseqc_done:
             file=getSample_names_post_mapping(),
         ),
         expand(
-            outputfolder+"/rseqc/{file}.junctionanno.junction.xls",
+            outputfolder+"/rseqc/{file}.junctionanno.junction.bed",
             file=getSample_names_post_mapping(),
         ),
         expand(
-            outputfolder+"/rseqc/{file}.junctionsat.junctionSaturation_plot.pdf",
+            outputfolder+"/rseqc/{file}.junctionsat.junctionSaturation_plot.r",
             file=getSample_names_post_mapping(),
         ),
         expand(
-            outputfolder+"/rseqc/{file}.infer_experiment.txt",
+            outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance_freq.txt",
             file=getSample_names_post_mapping(),
         ),
         expand(
-            outputfolder+"/rseqc/{file}.stats.txt",
+            outputfolder+"/rseqc/{file}.readdup.DupRate_plot.r",
             file=getSample_names_post_mapping(),
         ),
         expand(
-            outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance.txt",
-            file=getSample_names_post_mapping(),
-        ),
-        expand(
-            outputfolder+"/rseqc/{file}.readdistribution.txt",
-            file=getSample_names_post_mapping(),
-        ),
-        expand(
-            outputfolder+"/rseqc/{file}.readdup.DupRate_plot.pdf",
-            file=getSample_names_post_mapping(),
-        ),
-        expand(
-            outputfolder+"/rseqc/{file}.readgc.GC_plot.pdf",
+            outputfolder+"/rseqc/{file}.readgc.GC_plot.r",
             file=getSample_names_post_mapping(),
         ),
 

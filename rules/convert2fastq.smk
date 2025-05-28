@@ -193,6 +193,7 @@ if not config["skip_demux"]["skip_demux_active"]:
             chmod ago+rwx -R {params.output_dir} >> {log} 2>&1
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force --bcl-num-decompression-threads {resources.threads} --bcl-num-conversion-threads {resources.threads} --bcl-num-compression-threads {resources.threads} --bcl-num-parallel-tiles {resources.threads} >> {log} 2>&1
             cp {input[0]} {params.output_dir} >> {log} 2>&1
+            rm -rf {params.out_fastqs_dir}  >> {log} 2>&1 # to prevent 2 times demuxing into the same folder
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
             mv {params.undetermined} {params.output_dir} >> {log} 2>&1
             chmod 775 -R {params.output_dir} >> {log} 2>&1
