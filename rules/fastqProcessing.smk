@@ -600,7 +600,8 @@ rule Qualimap:
         qualimap_folder = outputfolder+"/qualimap",
         qualimap_logfolder = outputfolder+"/logs/qualimap",
         bamqc_outfile=outputfolder+"/qualimap/{file}_bamqc.pdf",
-        bamqc_log=outputfolder+"/logs/qualimap/{file}_bamqc.log"
+        bamqc_log=outputfolder+"/logs/qualimap/{file}_bamqc.log",
+        qualimap_bin_dir=config["mapping"]["qualimap_dir"]
     log:
     	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
     output:
@@ -616,8 +617,8 @@ rule Qualimap:
     	mkdir -p {params.qualimap_logfolder}
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
-        qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
-    	qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
+        {params.qualimap_bin_dir}/qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
+    	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod ago+rwx -R {output} >> {log} 2>&1  
     	"""
 
