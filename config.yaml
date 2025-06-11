@@ -83,6 +83,13 @@ kraken2:
   kraken2_active: False   #
   kraken2_database: "/gpfs/project/databases/Kraken2-2022-09-28/kraken_db_plus" # also possible: /gpfs/project/databases/Kraken2_refseq+hfmv # also possible: /gpfs/project/projects/bmfz_gtl/software/Kraken
 
+# kaiju is for metagenomic data only, if kraken/biobloom/blast/diamond give not a clear result, try this here
+kaiju:
+  kaiju_active: True
+  kaiju_db: "/gpfs/project/projects/bmfz_gtl/software/kaiju/kaiju_db_refseq_nr.fmi" 
+  kaiju_nodes_dmp: "/gpfs/project/projects/bmfz_gtl/software/kaiju/nodes.dmp"
+  kaiju_names_dmp: "/gpfs/project/projects/bmfz_gtl/software/kaiju/names.dmp"
+
 # jellyfish is used to compute 21-mers for DNA samples. This can be used to check quality and ploidity of samples. # use for whole-genome sequencing assays
 jellyfish:
   jellyfish_active: False #

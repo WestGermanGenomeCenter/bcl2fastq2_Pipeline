@@ -119,6 +119,9 @@ def getOutput():
     if config["sortmerna"]["sortmerna_active"]:
         all.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
 
+    if config["kaiju"]["kaiju_active"]:
+        all.extend(expand("{out}/kaiju/kaiju_species_table_{file}.txt",out=outputfolder,file=sample_names))
+
     if not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
@@ -132,9 +135,7 @@ def getFastQCs(wildcards):
     if config["mapping"]["mapping_active"]:
         #fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
         fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=getSample_names_post_mapping()))
-        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) # test this 
-            #print("sample names from getFastQCs, maybe fixed:")
-            #print(sample_names)
+        fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) 
 
     if config["umi_tools"]["umi_tools_active"]:
         fastQCs.extend(expand("{out}/fastqc/{file}.umis-extracted_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
@@ -156,7 +157,9 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
     if config["sortmerna"]["sortmerna_active"]:
         fastQCs.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
-
+    if config["kaiju"]["kaiju_active"]:
+        fastQCs.extend(expand("{out}/kaiju/kaiju_species_table_{file}.txt",out=outputfolder,file=sample_names))
+    
     return fastQCs
 
 
@@ -598,10 +601,11 @@ rule Qualimap:
         gtf=config["mapping"]["gtf_file"],
         qualimap_out =  outputfolder+"/qualimap/{file}",
         qualimap_folder = outputfolder+"/qualimap",
+        qualimap_bamqc_out = outputfolder+"/qualimap/{file}_bamqc",
         qualimap_logfolder = outputfolder+"/logs/qualimap",
-        bamqc_outfile=outputfolder+"/qualimap/{file}_bamqc.pdf",
-        bamqc_log=outputfolder+"/logs/qualimap/{file}_bamqc.log",
-        qualimap_bin_dir=config["mapping"]["qualimap_dir"]
+        bamqc_outfile = outputfolder+"/qualimap/{file}_bamqc.pdf",
+        bamqc_log = outputfolder+"/logs/qualimap/{file}_bamqc.log",
+        qualimap_bin_dir = config["mapping"]["qualimap_dir"]
     log:
     	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
     output:
@@ -614,10 +618,11 @@ rule Qualimap:
         mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
     	"""
-    	mkdir -p {params.qualimap_logfolder}
+    	mkdir -p {params.qualimap_logfolder} >> {log} 2>&1
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
-        {params.qualimap_bin_dir}/qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
+        mkdir -p {params.qualimap_bamqc_out} >> {log} 2>&1
+        {params.qualimap_bin_dir}/qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_bamqc_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
     	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod ago+rwx -R {output} >> {log} 2>&1  
     	"""
@@ -680,6 +685,39 @@ if config["kraken2"]["kraken2_active"]:
             chmod ago+rwx -R {params.outdir} >> {log} 2>&1
             """
 
+rule kaiju:
+    input:
+        outputfolder+"/untrimmed_fastq/{file}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+    params:
+        nodes_dmp = config["kaiju"]["kaiju_nodes_dmp"],
+        names_dmp = config["kaiju"]["kaiju_names_dmp"],
+        kaiju_db = config["kaiju"]["kaiju_db"],
+        kaiju_folder = outputfolder + "/kaiju",
+        logfolder = outputfolder + "/logs/kaiju",
+        in_between_file=temp(outputfolder + "/kaiju/kaiju_result_{file}.out"),
+    log:
+        outputfolder + "/logs/kaiju/{file}_kaiju.log"
+    resources:
+        threads=lambda wildcards, attempt: attempt * 12,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+            mem_gb=lambda wildcards, attempt: 148 + (attempt * 20)
+    conda:
+        p+"/envs/kaiju.yaml"
+    message: "kaiju: classifying metagenomic data..."
+    
+    output:
+        table = outputfolder + "/kaiju/kaiju_species_table_{file}.txt"
+    shell:
+        """
+        mkdir -p {params.kaiju_folder} 2>{log}
+        mkdir -p {params.logfolder} 2>{log}
+        cd {params.kaiju_folder} 2>{log}
+        kaiju -t {params.nodes_dmp} -f {params.kaiju_db} -i {input} -z {resources.threads} -o {params.in_between_file} 2>{log}
+        kaiju2table -t {params.nodes_dmp} -n {params.names_dmp} -r species -o {output.table} {params.in_between_file} 2>{log}
+
+        """
+
+
 rule blast:
     input:
         outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
@@ -707,8 +745,8 @@ rule blast:
         blast_out=outputfolder+"/blast/blast_report_{file}.tsv"
     shell:
         """
-        mkdir -p {params.blast_folder}
-        mkdir -p {params.blast_log_folder}
+        mkdir -p {params.blast_folder} 2>{log}
+        mkdir -p {params.blast_log_folder} 2>{log}
         bash {params.script_dir}/fastq_to_fasta_subsampling.sh {input} {params.blast_subsampled_fasta} 2>{log} 
         blastn -db {params.blast_db} -query {params.blast_subsampled_fasta} -outfmt 7 -max_target_seqs 5 -num_threads {resources.threads} >{output.blast_out}  2>{log}
         chmod -R 755 {params.blast_folder}

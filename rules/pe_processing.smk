@@ -346,7 +346,7 @@ if isSingleEnd() == False:
            textfile2=outputfolder+"/diamond/{short}_R2_001/{short}_r2_diamond_output.txt",
            #logfile_1=outputfolder+"/diamond/{short}_R1_001/diamond.log",
            #logfile_2=outputfolder+"/diamond/{short}_R2_001/diamond.log",
-           diamond_summary_file1=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt",
+           diamond_summary_file1=outputfolder+"/diamond/{short}_R1_001/{short}_diamond_output_summary.txt",
            diamond_summary_file2=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt"
 
        log:
