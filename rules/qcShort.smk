@@ -10,6 +10,12 @@ configfile: "config.yaml"
 outputfolder = config["demux"]["OutputFolder"]
 
 
+sample_names = list()
+if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+    fastqs = list(samples_dataframe.iloc[:, 0].values)
+    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
+
 def isSingleEnd() -> bool:
     """
     Returns wether the fastqs are single-end=True or paired-end=
@@ -17,10 +23,13 @@ def isSingleEnd() -> bool:
     R1 = list()
     R2 = list()
     for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-        else:
-            R2.append(sample)
+        if "_R" in sample:
+            if sample.split("_R")[1].startswith("1"):
+                R1.append(sample)
+            else:
+                R2.append(sample)
+        elif "_I" in sample:
+                print (" detected index reads, skipping these...")
     if len(R1)!=len(R2):
         return True
     else:
@@ -38,17 +47,17 @@ def getSample_names_post_mapping():# maybe wildcards ne
 				pe_samplenames.append(only_sample)
 		return pe_samplenames
 
-
+#
 # Check for projectNum in samplesheet name
 projectNum=validateProjectNum(samplesheet)
 if not projectNum:
     print("There was no project number to be found in the samplesheet and/or the name of the samplesheet")
 
-sample_names = list()
-if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-    fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs]
+#sample_names = list()
+#if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+#    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+#    fastqs = list(samples_dataframe.iloc[:, 0].values)
+#    sample_names = [fastq[:-9] for fastq in fastqs]
 
 def getFiles():
     files = list()

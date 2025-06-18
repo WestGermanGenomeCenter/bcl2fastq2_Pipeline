@@ -28,11 +28,16 @@ def getSample_names_post_mapping():# maybe wildcards ne
 		return pe_samplenames
 
 
+
+
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
     fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs]
+    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
+
+
+
 
 
 

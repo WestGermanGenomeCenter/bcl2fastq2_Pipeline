@@ -48,8 +48,7 @@ cutadapt:
     - b
   other_params: "--minimum-length 25 --quality-cutoff 5 -n 2" # very conservative, should work with any assay.
 
-# this also enables qualimap by default, that also does rna-seq mapping qc. for qualimap to work right a reference genome and gtf file from ensembl work best. this also enables featureCounts and stringtie, 2 tools that quantify the star output to count matrices.
-mapping: # for this to work, cutadapt needs to be active 
+mapping: # transcriptome mapping happens here with STAR
   mapping_active: True
   gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
   genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl"
@@ -108,7 +107,7 @@ diamond:
 
 # sortmerna counts rRNA from input files, splitting the .fastq in the process.  # needs cutadapt and/ or umi_tools to be active
 sortmerna:
-  sortmerna_active: True
+  sortmerna_active: False
   sortmerna_reference_list: '  --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5.8s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-28s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-18s-id95.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-16s-id90.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-16s-id95.fasta'
 
 

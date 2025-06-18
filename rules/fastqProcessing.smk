@@ -19,46 +19,28 @@ outputfolder = config["demux"]["OutputFolder"]
 include: "qcShort.smk"
 include: "pe_processing.smk"
 include: "common.smk"
-#include: "qc_pe.smk"
 include: "qc.smk"
 #
 
 
 
-def getSample_names_post_mapping():# maybe wildcards ne
-	if isSingleEnd () == True:
-		return sample_names
-	else:
-		pe_samplenames = list()
-		for sample in sample_names:
-			if sample.split("_R")[1].startswith("1"):
-				only_sample=sample.replace('_R1','_pe')
-				pe_samplenames.append(only_sample)
-		return pe_samplenames
-
+#def getSample_names_post_mapping():# maybe wildcards ne
+#	if isSingleEnd () == True:
+#		return sample_names
+#	else:
+#		pe_samplenames = list()
+#		for sample in sample_names:
+#			if sample.split("_R")[1].startswith("1"):
+#				only_sample=sample.replace('_R1','_pe')
+#				pe_samplenames.append(only_sample)
+#		return pe_samplenames
+#
 
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
     fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs]
-
-def isSingleEnd() -> bool:
-    """
-    Returns wether the fastqs are single-end=True or paired-end=False
-    """
-    R1 = list()
-    R2 = list()
-    for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-        else:
-            R2.append(sample)
-    if len(R1)!=len(R2):
-        return True
-    else:
-        return False
-
+    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
 
 
 # Set expected pipeline output
@@ -213,7 +195,7 @@ if isSingleEnd() == True:
             outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
 
         resources:
-            threads=lambda wildcards, attempt: attempt * 1,
+            threads=lambda wildcards, attempt: attempt * 4,
             time_hrs=lambda wildcards, attempt: attempt * 1,
             mem_gb=lambda wildcards, attempt: attempt * 12
         log:
@@ -316,7 +298,7 @@ rule FastQC_untrimmed:
         zip = temp(outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip"), 
         html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
     resources:
-        threads=lambda wildcards, attempt: attempt * 1,
+        threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 1,
         mem_gb=lambda wildcards, attempt: attempt * 4
     log:
@@ -453,7 +435,7 @@ if isSingleEnd() == True:
             "Run FastQC"
 
         resources:
-            threads=lambda wildcards, attempt: attempt * 1,
+            threads=lambda wildcards, attempt: attempt * 2,
             time_hrs=lambda wildcards, attempt: attempt * 1,
             mem_gb=lambda wildcards, attempt: attempt * 8
         shell:
@@ -694,13 +676,13 @@ rule kaiju:
         kaiju_db = config["kaiju"]["kaiju_db"],
         kaiju_folder = outputfolder + "/kaiju",
         logfolder = outputfolder + "/logs/kaiju",
-        in_between_file=temp(outputfolder + "/kaiju/kaiju_result_{file}.out"),
+        in_between_file = temp(outputfolder + "/kaiju/{file}_kaiju_result.out"),
     log:
         outputfolder + "/logs/kaiju/{file}_kaiju.log"
     resources:
         threads=lambda wildcards, attempt: attempt * 12,
         time_hrs=lambda wildcards, attempt: attempt * 1,
-            mem_gb=lambda wildcards, attempt: 148 + (attempt * 20)
+        mem_gb=lambda wildcards, attempt: 108 + (attempt * 20)
     conda:
         p+"/envs/kaiju.yaml"
     message: "kaiju: classifying metagenomic data..."
@@ -805,9 +787,9 @@ rule biobloom:
         p+"/envs/biobloom.yaml"
     message: "biobloom: filtering fastq.gz files with biobloom kmer filters for sequence species estimation..."
     resources:
-        threads=lambda wildcards, attempt: attempt * 32,
+        threads=lambda wildcards, attempt: attempt * 24,
         time_hrs=lambda wildcards, attempt: attempt * 2,
-        mem_gb=lambda wildcards, attempt: attempt * 64
+        mem_gb=lambda wildcards, attempt: attempt * 48
 
     shell:
         """

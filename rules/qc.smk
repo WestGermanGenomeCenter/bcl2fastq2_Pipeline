@@ -12,41 +12,31 @@ outputfolder = config["demux"]["OutputFolder"]
 
 projectNum=validateProjectNum(samplesheet)
 
-def getSample_names_post_mapping():
-	if isSingleEnd () == True:
-		return sample_names
-	else:
-		pe_samplenames = list()
-		for sample in sample_names:
-			if sample.split("_R")[1].startswith("1"):
-				only_sample=sample.replace('_R1','_pe')
-				pe_samplenames.append(only_sample)
-		return pe_samplenames
+#def getSample_names_post_mapping():
+#	if isSingleEnd () == True:
+#		return sample_names
+#	else:
+#		pe_samplenames = list()
+#		for sample in sample_names:
+#			if sample.split("_R")[1].startswith("1"):
+#				only_sample=sample.replace('_R1','_pe')
+#				pe_samplenames.append(only_sample)
+#		return pe_samplenames
+#
+#
+#sample_names = list()
+#if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
+#    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
+#    fastqs = list(samples_dataframe.iloc[:, 0].values)
+#    sample_names = [fastq[:-9] for fastq in fastqs]
+#
 
 
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
     fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs]
-
-def isSingleEnd() -> bool:
-    """
-    Returns wether the fastqs are single-end=True or paired-end=False
-    """
-    R1 = list()
-    R2 = list()
-    for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-        else:
-            R2.append(sample)
-    if len(R1)!=len(R2):
-        return True
-    else:
-        return False
-
-
+    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
 
 
 rule rseqc_gtf2bed:
