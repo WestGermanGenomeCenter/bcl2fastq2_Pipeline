@@ -245,7 +245,7 @@ if isSingleEnd() == True:
             """
             mkdir -p {params.mapping_dir}
             STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
-            chmod ago+rwx -R {output} >> {log} 2>&1
+            chmod -f  ago+rwx -R {output} >> {log} 2>&1
             """
 
 
@@ -310,7 +310,7 @@ rule FastQC_untrimmed:
     shell:
         """
         mkdir -p {params.out}/fastqc_untrimmed/
-        chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+        chmod -f  ago+rwx -R {params.out}/fastqc_untrimmed/ || :
         unset command_not_found_handle
         fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
         fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
@@ -351,7 +351,7 @@ rule samtools:
         samtools stats {input.bams} >{output.samtools_stats_file} 2>{log}
         samtools coverage {input.bams} >{params.samtools_coverage_file} 2>{log}
         plot-bamstats {output.samtools_stats_file} -p {params.samtools_plot_prefix}   2>{log}      
-        chmod ago+rwx -R {output} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
 
 
@@ -382,7 +382,7 @@ rule preseq:
         samtools index {params.sorted_bam} 2>{log}
         bedtools bamtobed -i {input} >{params.bed_bam} 2>{log}
         preseq c_curve -P {params.bed_bam} -o {output.c_curve_out} 2>{log}
-        chmod ago+rwx -R {output} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
     
         """
 
@@ -410,7 +410,7 @@ rule stringtie:
         mkdir -p {params.stie_log_folder}
         mkdir -p {params.out_folder} >> {log} 2>&1
         stringtie {input.bams} -G {params.gtf} -o {output} -A {params.tab_file} >> {log} 2>&1
-        chmod ago+rwx -R {output} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
 if isSingleEnd() == True:
 
@@ -443,7 +443,7 @@ if isSingleEnd() == True:
             mkdir -p {params.out}/fastqc/ >> {log} 2>&1
             fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc/ >> {log} 2>&1
             fastp -i {input} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
-            chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
+            chmod -f  ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
 
 
@@ -542,7 +542,7 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             mkdir -p {params.outputf}
             mkdir -p {params.logfolder}
             umi_tools extract --stdin={input} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
-            chmod ago+rwx -R {params.outputf}
+            chmod -f  ago+rwx -R {params.outputf}
             sha256sum {output} >>{params.checksum_file}
             """ 
     
@@ -573,7 +573,7 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             samtools sort --threads {resources.threads} {input} -o {params.sorted_bam} 2>{log}
             samtools index {params.sorted_bam} 2>{log}
             umi_tools dedup -I {params.sorted_bam} --output-stats={params.output_stats} -S {output} --log={log}
-            #chmod ago+rwx {params.out} 2>{log}
+            #chmod -f  ago+rwx {params.out} 2>{log}
             """
 
 rule Qualimap:
@@ -606,7 +606,7 @@ rule Qualimap:
         mkdir -p {params.qualimap_bamqc_out} >> {log} 2>&1
         {params.qualimap_bin_dir}/qualimap bamqc -bam {input.bams} -gff {params.gtf} --java-mem-size=16G -p strand-specific-forward -outdir {params.qualimap_bamqc_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
     	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
-    	chmod ago+rwx -R {output} >> {log} 2>&1  
+    	chmod -f  ago+rwx -R {output} >> {log} 2>&1  
     	"""
 
 
@@ -631,7 +631,7 @@ rule featurecounts:
         """
         mkdir -p {params.outdir}
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
-        chmod ago+rwx -R {params.outdir}
+        chmod -f  ago+rwx -R {params.outdir}
         """
 
 
@@ -664,7 +664,7 @@ if config["kraken2"]["kraken2_active"]:
             mkdir -p {params.outdir}
             mkdir -p {params.logdir} 2>{log}
             kraken2 --use-names --db {params.kraken2_db} --threads {resources.threads} --gzip-compressed --confidence 0.05 --report {output} {input} >{params.outfile} >> {log} 2>&1
-            chmod ago+rwx -R {params.outdir} >> {log} 2>&1
+            chmod -f  ago+rwx -R {params.outdir} >> {log} 2>&1
             """
 
 rule kaiju:
@@ -731,7 +731,7 @@ rule blast:
         mkdir -p {params.blast_log_folder} 2>{log}
         bash {params.script_dir}/fastq_to_fasta_subsampling.sh {input} {params.blast_subsampled_fasta} 2>{log} 
         blastn -db {params.blast_db} -query {params.blast_subsampled_fasta} -outfmt 7 -max_target_seqs 5 -num_threads {resources.threads} >{output.blast_out}  2>{log}
-        chmod -R 755 {params.blast_folder}
+        chmod -f  -R 755 {params.blast_folder}
         bash {params.script_dir}/filter_blast.sh {output} {params.summary_file}  2>{log}       
         """
 
@@ -873,8 +873,7 @@ rule multiqc_raw:
     	cd {params.folder_to_check}
        	ls -f1 {params.folder_to_check}/*fastqc* >{params.list_file_raw}
        	multiqc . --filename {output} --fullnames -q --ignore-samples Undetermined* -x Undetermined*  -m 'fastqc' --no-data-dir >> {log} 2>&1
-       	chmod ago+rwx -R {output}
-        chmod ago+rwx -R {params.output_folder}
+       	chmod -f   -f ago+rwx -R {output}
        	"""
                                                                              
 
