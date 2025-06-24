@@ -7,3 +7,4 @@ channels:
 dependencies:
   - star=2.7.10b
   - samtools
+  - gnuplot

@@ -268,7 +268,7 @@ if config["skip_demux"]["skip_demux_active"]:
             mkdir -p {params.reports_dir}
             mkdir -p {params.untrimmed_fastq_folder}
             touch {params.reports_file}
-            mv {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
+            cp {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
             touch {output.flagfile}
             """
 
