@@ -83,40 +83,40 @@ def getSample_names_post_mapping():# maybe wildcards ne
 
 
 
-#def getSamples(wildcards):
-#    
-#    if isSingleEnd() == True :
-#        #print("Single end input, thus aligning files:")
-#        for sample in sample_names:
-#            if str(wildcards) in sample:
-#                if config["umi_tools"]["umi_tools_active"]:
-#                    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
-#                elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
-#                    return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=sample)
-#                else:
-#                    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample)
-#                
-#    else:   
-#        #print("found paired end:")
-#        sampleName = str(wildcards).split("_R")[0]
-#        R1and2 = list()
-#        for sample in sample_names:
-#            if sample.split("_R")[1].startswith("1"):
-#                R1and2.append(sample)
-#            else:
-#                R1and2.append(sample)
-#
-#
-#        if config["umi_tools"]["umi_tools_active"]:
-#       	    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=R1and2)
-#        elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
-#            returning_files=expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=R1and2)
-#            #print ("pe, after cutadapt, returning files:")
-#            #print(returning_files)
-#            return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=R1and2)
-#        else:
-#       	    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=R1and2)
-#
+def getSamples(wildcards):
+    
+    if isSingleEnd() == True :
+        #print("Single end input, thus aligning files:")
+        for sample in sample_names:
+            if str(wildcards) in sample:
+                if config["umi_tools"]["umi_tools_active"]:
+                    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample)
+                elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
+                    return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=sample)
+                else:
+                    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample)
+                
+    else:   
+        #print("found paired end:")
+        sampleName = str(wildcards).split("_R")[0]
+        R1and2 = list()
+        for sample in sample_names:
+            if sample.split("_R")[1].startswith("1"):
+                R1and2.append(sample)
+            else:
+                R1and2.append(sample)
+
+
+        if config["umi_tools"]["umi_tools_active"]:
+       	    return expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=R1and2)
+        elif config["cutadapt"]["cutadapt_active"]:# continue here - we have 3 cases: raw, cutadapt, umi_tools
+            returning_files=expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=R1and2)
+            #print ("pe, after cutadapt, returning files:")
+            #print(returning_files)
+            return expand("{out}/trimmed/{file}_trimmed.fastq.gz",out=outputfolder,file=R1and2)
+        else:
+       	    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=R1and2)
+
 
 #def get_pe_pairingsheet():
 #    # get samplenamespostmapping, get r1 , get r2 and save all onto a file

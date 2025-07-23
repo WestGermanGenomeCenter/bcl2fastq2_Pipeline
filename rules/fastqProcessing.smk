@@ -206,6 +206,7 @@ if isSingleEnd() == True:
             p+"/envs/cutadapt.yaml"
         shell:
             """
+            rm -rf {output}
             mkdir -p {params.out}/trimmed
             cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
             sha256sum {output} >>{params.sha_sum_file}
@@ -582,10 +583,7 @@ rule Qualimap:
         gtf=config["mapping"]["gtf_file"],
         qualimap_out =  outputfolder+"/qualimap/{file}",
         qualimap_folder = outputfolder+"/qualimap",
-        qualimap_bamqc_out = outputfolder+"/qualimap/{file}_bamqc",
         qualimap_logfolder = outputfolder+"/logs/qualimap",
-        bamqc_outfile = outputfolder+"/qualimap/{file}_bamqc.pdf",
-        bamqc_log = outputfolder+"/logs/qualimap/{file}_bamqc.log",
         qualimap_bin_dir = config["mapping"]["qualimap_dir"]
     log:
     	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
@@ -602,8 +600,6 @@ rule Qualimap:
     	mkdir -p {params.qualimap_logfolder} >> {log} 2>&1
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
-        mkdir -p {params.qualimap_bamqc_out} >> {log} 2>&1
-        {params.qualimap_bin_dir}/qualimap bamqc -bam {input.bams} -gff {params.gtf} -p strand-specific-forward -outdir {params.qualimap_bamqc_out} -outfile {params.bamqc_outfile} >> {params.bamqc_log} 2>&1
     	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod -f  ago+rwx -R {output} >> {log} 2>&1  
     	"""
@@ -872,7 +868,7 @@ rule multiqc_raw:
     	cd {params.folder_to_check}
        	ls -f1 {params.folder_to_check}/*fastqc* >{params.list_file_raw}
        	multiqc . --filename {output} --fullnames -q --ignore-samples Undetermined* -x Undetermined*  -m 'fastqc' --no-data-dir >> {log} 2>&1
-       	chmod -f   -f ago+rwx -R {output}
+       	chmod -f  ago+rwx -R {output}
        	"""
                                                                              
 

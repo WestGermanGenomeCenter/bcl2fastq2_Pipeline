@@ -124,8 +124,10 @@ if isSingleEnd() == False:
             p+"/envs/cutadapt.yaml"
         shell:
             """
+            
             mkdir -p {params.out}/trimmed
             mkdir -p {params.log_folder}
+            rm -f {output.fq1} {output.fq2}
             cutadapt {params.adapters} {params.otherParams} -o {output.fq1} -p {output.fq2} {input.in_1} {input.in_2} >> {log} 2>&1
             sha256sum {output} >>{params.sha_sum_file}
             """
