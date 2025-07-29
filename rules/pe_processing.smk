@@ -15,7 +15,11 @@ validate(config, schema="../schemas/config.schema.yaml")
 samplesheet = config["demux"]["SampleSheet"]
 outputfolder = config["demux"]["OutputFolder"]
 
+
+
 ### include rules ###
+include: "common.smk"
+
 
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
@@ -362,7 +366,7 @@ if isSingleEnd() == False:
 
        shell:
            """
-           mkdir -p {params.out_folder} 2>{log}
+           mkdir -p {params.out_folder} 
            mkdir -p {params.out_sample_folder1} && mkdir -p {params.out_sample_folder2} 2>{log}
            cd {params.out_sample_folder1} 2>{log}
            diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile1} --query {input.in_1} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {output.log_file1} 2>&1

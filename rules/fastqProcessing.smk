@@ -107,6 +107,8 @@ def getOutput():
     if not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
+    all.extend(expand("{out}/inputfiles_checkpoint_completed.flag"),out=outputfolder)
+
     return all
 
 
@@ -158,6 +160,38 @@ localrules: all, gocryptfs
 rule all:
     input:
         getOutput() if projectNum else ""
+
+
+# add rule to make wc -l checks on each file - if one is zero bytes then snakemake should not even start
+
+
+
+
+
+import gzip
+
+def check_fastq_content(files):
+    """Check if any .fastq.gz file is empty."""
+    for file in files:
+        with gzip.open(file, 'rt') as f:
+            if not f.readline():
+                raise ValueError(f"Input file {file} is empty.")
+
+checkpoint check_fastq_files:
+    input:
+        outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+    output:
+        outputfolder+"/inputfiles_checkpoint_completed.flag"
+    run:
+        check_fastq_content(input)
+
+
+
+
+
+
+
+
 
 
 

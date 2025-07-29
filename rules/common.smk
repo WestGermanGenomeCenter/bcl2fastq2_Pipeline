@@ -19,17 +19,17 @@ if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     fastqs = list(samples_dataframe.iloc[:, 0].values)
     sample_names = [fastq[:-9] for fastq in fastqs]
 
-#def getFiles():
-#    files = list()
-#    for sample in sample_names:
-#        trySplit = sample.split(os.sep)[-1]
-#        if trySplit:
-#            sampleName = trySplit.split("_R")[0]
-#            files.append(sampleName)
-#    return files
-#
-#
-# Get the fastq.gz samples
+def getFiles():
+    files = list()
+    for sample in sample_names:
+        trySplit = sample.split(os.sep)[-1]
+        if trySplit:
+            sampleName = trySplit.split("_R")[0]
+            files.append(sampleName)
+    return files
+
+
+ #Get the fastq.gz samples
 
 
 

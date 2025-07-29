@@ -127,7 +127,7 @@ rule rseqc_minor:
         fpkm_out=outputfolder+"/rseqc/{file}_rseqc_fpkm_count.tsv",
         prefix_readdup=outputfolder+"/rseqc/{file}.readdup",
         prefix_readgc=outputfolder+"/rseqc/{file}.readgc",
-        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody"
+        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody",
         rseqc_dir=outputfolder+"/rseqc",
         log_dir=outputfolder+"/logs/rseqc/"
 
