@@ -107,7 +107,8 @@ def getOutput():
     if not os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
         all = list()
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
-    all.extend(expand("{out}/inputfiles_checkpoint_completed.flag"),out=outputfolder)
+    
+    all.extend(expand("{out}/inputfiles_checkpoint_completed.flag",out=outputfolder))
 
     return all
 
@@ -169,6 +170,7 @@ rule all:
 
 
 import gzip
+#         expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping())
 
 def check_fastq_content(files):
     """Check if any .fastq.gz file is empty."""
@@ -179,7 +181,8 @@ def check_fastq_content(files):
 
 checkpoint check_fastq_files:
     input:
-        outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+        expand("{out}/untrimmed_fastq/{file}.fastq.gz",file=sample_names,out=outputfolder)
+        #outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
     output:
         outputfolder+"/inputfiles_checkpoint_completed.flag"
     run:
