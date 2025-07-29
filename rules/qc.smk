@@ -68,11 +68,7 @@ rule rseqc_main:
     output:
         junc_anno=outputfolder+"/rseqc/{file}.junctionanno.junction.bed",
         junc_sat=outputfolder+"/rseqc/{file}.junctionsat.junctionSaturation_plot.r",
-        inner_dis=outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance_freq.txt",
-        dups=outputfolder+"/rseqc/{file}.readdup.DupRate_plot.r",
-        gc=outputfolder+"/rseqc/{file}.readgc.GC_plot.r"
-
-
+        inner_dis=outputfolder+"/rseqc/{file}.inner_distance_freq.inner_distance_freq.txt"
     log:
         outputfolder+"/logs/rseqc/{file}.log"
     params:
@@ -87,9 +83,8 @@ rule rseqc_main:
         tin_prefix=outputfolder+"/rseqc/{file}_tin_.bed",
         genebody_pre=outputfolder+"/rseqc/{file}_genebody_coverage",
         fpkm_out=outputfolder+"/rseqc/{file}_rseqc_fpkm_count.tsv",
-        prefix_readdup=outputfolder+"/rseqc/{file}.readdup",
-        prefix_readgc=outputfolder+"/rseqc/{file}.readgc",
-        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody"
+        rseqc_dir=outputfolder+"/rseqc",
+        log_dir=outputfolder+"/logs/rseqc/"
 
     conda:
         p+"/envs/rseqc.yaml"
@@ -99,6 +94,7 @@ rule rseqc_main:
         mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
         """
+        mkdir -p {params.rseqc_dir} && mkdir -p {üarams.log_dir} >> {log} 2>&1
         junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncanno} >> {log} 2>&1
         bam_stat.py -i {input.bam} > {params.stats} 2> {log}
         junction_saturation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncsat}  >> {log} 2>&1
@@ -106,11 +102,57 @@ rule rseqc_main:
         read_NVC.py -i {input.bam} -o {params.nvc_outpre} >> {log} 2>&1
         FPKM_count.py -r {input.bed} -i {input.bam} -o {params.fpkm_out} >> {log} 2>&1
         inner_distance.py -r {input.bed} -i {input.bam} -o {params.prefix_innerdis} >> {log} 2>&1
+        """
+
+
+
+
+rule rseqc_minor:
+    input:
+        bam=outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam",
+        bed=outputfolder+"/rseqc/annotation.bed",
+    output:
+        dups=outputfolder+"/rseqc/{file}.readdup.DupRate_plot.r",
+        gc=outputfolder+"/rseqc/{file}.readgc.GC_plot.r"
+
+    log:
+        outputfolder+"/logs/rseqc/{file}.log"
+    params:
+        read_dis=outputfolder+"/rseqc/{file}.readdistribution.txt",
+        infer_ex=outputfolder+"/rseqc/{file}.infer_experiment.txt",
+        stats=outputfolder+"/rseqc/{file}.stats.txt",
+        extra=r"-q 255",  # STAR uses 255 as a score for unique mappers
+        tin_prefix=outputfolder+"/rseqc/{file}_tin_.bed",
+        genebody_pre=outputfolder+"/rseqc/{file}_genebody_coverage",
+        fpkm_out=outputfolder+"/rseqc/{file}_rseqc_fpkm_count.tsv",
+        prefix_readdup=outputfolder+"/rseqc/{file}.readdup",
+        prefix_readgc=outputfolder+"/rseqc/{file}.readgc",
+        prefix_bodycov=outputfolder+"/rseqc/{file}.genebody"
+        rseqc_dir=outputfolder+"/rseqc",
+        log_dir=outputfolder+"/logs/rseqc/"
+
+    conda:
+        p+"/envs/rseqc.yaml"
+    message:
+        "RSeqQC: Part2..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 2,
+        time_hrs=lambda wildcards, attempt: attempt * 3,
+        mem_gb=lambda wildcards, attempt: attempt * 12
+    shell:
+        """
+        mkdir -p {params.rseqc_dir} && mkdir -p {üarams.log_dir} >> {log} 2>&1
         read_distribution.py -r {input.bed} -i {input.bam} > {params.read_dis} 2> {log}
         read_duplication.py -i {input.bam} -o {params.prefix_readdup} >> {log} 2>&1
         read_GC.py -i {input.bam} -o {params.prefix_readgc} >> {log} 2>&1
         #geneBody_coverage.py -r {input.bed} -i {input.bam}  -o {params.prefix_bodycov}  >> {log} 2>&1
         """
+
+
+
+
+
+
 
 
 rule rseqc_done:
@@ -150,3 +192,5 @@ rule rseqc_done:
         """
         touch {output}
         """
+
+

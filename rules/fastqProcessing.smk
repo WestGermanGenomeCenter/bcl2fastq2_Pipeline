@@ -677,7 +677,7 @@ rule kaiju:
     resources:
         threads=lambda wildcards, attempt: attempt * 12,
         time_hrs=lambda wildcards, attempt: attempt * 1,
-        mem_gb=lambda wildcards, attempt: 108 + (attempt * 20)
+        mem_gb=lambda wildcards, attempt: 88 + (attempt * 40)
     conda:
         p+"/envs/kaiju.yaml"
     message: "kaiju: classifying metagenomic data..."
@@ -795,6 +795,36 @@ rule biobloom:
         nice biobloomcategorizer -f {params.filter_string} {params.fastq_file} -t {resources.threads} -p {params.output_prefix} >> {log} 2>&1
   
         """
+
+
+
+
+#localrules: count_matrix
+
+if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
+    rule count_matrix:
+        input:
+            expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getSample_names_post_mapping())
+        output:
+            outputfolder+"/counts/all.tsv"
+        resources:
+            threads=lambda wildcards, attempt: attempt * 1,
+            time_hrs=lambda wildcards, attempt: attempt * 1,
+            mem_gb=lambda wildcards, attempt: attempt * 4
+        params:
+            samples=getFiles(),
+            strand="1"
+        conda:
+            p+"/envs/pandas.yaml"
+        script:
+            "../scripts/count-matrix.py"
+
+
+
+
+
+
+
 
 rule transfer_files:
     input:

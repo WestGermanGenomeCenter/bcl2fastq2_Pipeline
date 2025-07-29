@@ -1,4 +1,4 @@
-name: STAR
+name: samtools
 channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/main
@@ -9,3 +9,4 @@ dependencies:
   - samtools
   - gnuplot
   - libtiff
+  - cairo
