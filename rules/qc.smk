@@ -141,7 +141,7 @@ rule rseqc_minor:
         mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
         """
-        mkdir -p {params.rseqc_dir} && mkdir -p {üarams.log_dir} >> {log} 2>&1
+        mkdir -p {params.rseqc_dir} && mkdir -p {params.log_dir} >> {log} 2>&1
         read_distribution.py -r {input.bed} -i {input.bam} > {params.read_dis} 2> {log}
         read_duplication.py -i {input.bam} -o {params.prefix_readdup} >> {log} 2>&1
         read_GC.py -i {input.bam} -o {params.prefix_readgc} >> {log} 2>&1
