@@ -68,8 +68,9 @@ preseq:
 # umi_tools is used in two steps to first move the umis from a defined position of the trimmed read to the read header inside the .fastq.gz files # and then after mapping with star deduplicate the mapped reads based on position and umi in the .bam files 
 umi_tools: # for this to work, cutadapt needs to be active 
   umi_tools_active: True
- # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read
-  pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! 
+ # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read {s<=2}
+  pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA){s<=1}.+"' # Lexogen: 6nt umi + tata = 10nt UMI , allowing one mismatch in the spacer 
+ # pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! 
   pattern2: '""' # umi pattern for the second read if needed, only possible in paired-end sequencing setups
 
 # blast is used as a quick proxy for sample species estimation. only a small subset are blasted (blastn ) versus a reference-only database that is quite small only for trimmed reads as the adapter can confuse its results. # outputs a table and a summary file. also subsamples reads to speedup the process for each input file. 

@@ -18,7 +18,7 @@ outputfolder = config["demux"]["OutputFolder"]
 
 
 ### include rules ###
-include: "common.smk"
+#include: "common.smk"
 
 
 sample_names = list()
@@ -105,7 +105,8 @@ if isSingleEnd() == False:
     rule cutadapt_pe:
         input:
             in_1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
-            in_2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
+            in_2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz",
+            nonempty_fastqs=outputfolder+"/inputfiles_checkpoint_completed.out"
         params:
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],

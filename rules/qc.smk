@@ -94,7 +94,7 @@ rule rseqc_main:
         mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
         """
-        mkdir -p {params.rseqc_dir} && mkdir -p {üarams.log_dir} >> {log} 2>&1
+        mkdir -p {params.rseqc_dir} && mkdir -p {params.log_dir} >> {log} 2>&1
         junction_annotation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncanno} >> {log} 2>&1
         bam_stat.py -i {input.bam} > {params.stats} 2> {log}
         junction_saturation.py {params.extra} -i {input.bam} -r {input.bed} -o {params.prefix_juncsat}  >> {log} 2>&1
@@ -134,7 +134,7 @@ rule rseqc_minor:
     conda:
         p+"/envs/rseqc.yaml"
     message:
-        "RSeqQC: Part2..."
+        "RSeqQC: Part 2..."
     resources:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 3,

@@ -108,7 +108,7 @@ def getOutput():
         all = list()
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
     
-    all.extend(expand("{out}/inputfiles_checkpoint_completed.flag",out=outputfolder))
+    all.extend(expand("{out}/inputfiles_checkpoint_completed.out",out=outputfolder))
 
     return all
 
@@ -169,24 +169,29 @@ rule all:
 
 
 
-import gzip
-#         expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping())
 
-def check_fastq_content(files):
-    """Check if any .fastq.gz file is empty."""
-    for file in files:
-        with gzip.open(file, 'rt') as f:
-            if not f.readline():
-                raise ValueError(f"Input file {file} is empty.")
+
+
+
+
 
 checkpoint check_fastq_files:
     input:
         expand("{out}/untrimmed_fastq/{file}.fastq.gz",file=sample_names,out=outputfolder)
         #outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
     output:
-        outputfolder+"/inputfiles_checkpoint_completed.flag"
-    run:
-        check_fastq_content(input)
+        outputfolder+"/inputfiles_checkpoint_completed.out"
+    params:
+        dir_to_check=outputfolder+"/untrimmed_fastq/"
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 2
+    message: "checking if all .fastq.gz file are non-empty..."
+    shell:
+        """
+        bash scripts/check_input_fastqs.sh {params.dir_to_check} >>{output}
+        """
 
 
 
@@ -219,7 +224,9 @@ if isSingleEnd() == True:
     rule cutadapt:
         input:
         # change this to if paired end, only the R1 as input
-            outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+            fastqs=outputfolder+"/untrimmed_fastq/{file}.fastq.gz",
+            nonempty_fastqs=outputfolder+"/inputfiles_checkpoint_completed.out"
+
             #fastq_list=get_cutadapt_input_files
         params:
             #fastq_input=get_pe_trimming,
@@ -245,7 +252,7 @@ if isSingleEnd() == True:
             """
             rm -rf {output}
             mkdir -p {params.out}/trimmed
-            cutadapt {params.adapters} {params.otherParams} -o {output} {input} 2> {log}
+            cutadapt {params.adapters} {params.otherParams} -o {output} {input.fastqs} 2> {log}
             sha256sum {output} >>{params.sha_sum_file}
             """
 
@@ -493,7 +500,7 @@ if isSingleEnd() == True:
             fq_rrna_free_string=outputfolder+"/sortmerna/{file}_non-ribosomal_rna",
             log_folder=outputfolder+"/logs/sortmerna/",
             folder_sort=outputfolder+"/sortmerna/",
-            workdir=outputfolder+"/sortmerna/{file}_sortmerna",
+            workdir=temp(outputfolder+"/sortmerna/{file}_sortmerna"),
 
         output:
             fq_rrna=outputfolder+"/sortmerna/{file}_ribosomal_rna.fq.gz",
@@ -515,6 +522,7 @@ if isSingleEnd() == True:
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string} >> {log} 2>&1
+            #rm -rf {params.workdir} 2>{log}
             """
 # #nice sortmerna --ref rfam-5.8s-database-id98.fasta --ref silva-arc-23s-id98.fasta --ref silva-bac-23s-id98.fasta --ref silva-euk-28s-id98.fasta --reads ../../612/612-3_processed.fastq.gz --threads 64 --workdir ./sortmerna-workdir_test_13 --aligned rRna_reads_test_ --fastx --other non_rRna_reads_test_
 
