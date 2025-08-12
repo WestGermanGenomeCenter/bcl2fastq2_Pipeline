@@ -22,20 +22,6 @@ include: "common.smk"
 include: "qc.smk"
 #
 
-
-
-#def getSample_names_post_mapping():# maybe wildcards ne
-#	if isSingleEnd () == True:
-#		return sample_names
-#	else:
-#		pe_samplenames = list()
-#		for sample in sample_names:
-#			if sample.split("_R")[1].startswith("1"):
-#				only_sample=sample.replace('_R1','_pe')
-#				pe_samplenames.append(only_sample)
-#		return pe_samplenames
-#
-
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
@@ -278,6 +264,7 @@ if isSingleEnd() == True:
             prefix = outputfolder + "/star/{file}_",
             genDir = config["mapping"]["genomeDir"],
             mapping_dir = outputfolder+"/star",
+            work_dir = outputfolder + "/star/{file}__STARgenome",
         resources:
             threads=lambda wildcards, attempt: attempt * 12,
             time_hrs=lambda wildcards, attempt: attempt * 2,
@@ -290,6 +277,7 @@ if isSingleEnd() == True:
             mkdir -p {params.mapping_dir}
             STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
             chmod -f  ago+rwx -R {output} >> {log} 2>&1
+            rm -rf {params.work_dir} >> {log} 2>&1
             """
 
 
@@ -691,7 +679,7 @@ if config["kraken2"]["kraken2_active"]:
         resources:
             threads=lambda wildcards, attempt: attempt * 2,
             time_hrs=lambda wildcards, attempt: attempt * 1,
-            mem_gb=lambda wildcards, attempt: 168 + (attempt * 10)
+            mem_gb=lambda wildcards, attempt: 172 + (attempt * 10)
 
         conda:
             p+"/envs/kraken2.yaml"
@@ -903,7 +891,8 @@ rule multiqc:
     output:
         "{out}/multiqc_report_complete_{prj}.html".format(out=outputfolder,prj=projectNum)
     params:
-        output=outputfolder
+        output=outputfolder,
+        deletelist=outputfolder+"/logs/deleted_empty_files.out"
     log:
         outputfolder+"/logs/MultiQC.log"
     conda:
@@ -915,6 +904,9 @@ rule multiqc:
     shell:
         """
         multiqc --filename {output}  --ignore-samples Undetermined* -x Undetermined* {params.output} -o {params.output} --no-data-dir --fullnames >> {log} 2>&1
+        cd {params.output} 
+        find . -type f -empty -name "*.log" >>{params.deletelist}
+        find . -type f -empty -name "*.log" -delete >>{log} # deleting all empty logfiles
         """
 
 

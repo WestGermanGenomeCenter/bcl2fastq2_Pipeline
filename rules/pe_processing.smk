@@ -56,21 +56,43 @@ def get_pe_pairingsheet():
 
 
 
-#def isSingleEnd() -> bool:
-#    """
-#    Returns wether the fastqs are single-end=True or paired-end=False
-#    """
-#    R1 = list()
-#    R2 = list()
-#    for sample in sample_names:
-#        if sample.split("_R")[1].startswith("1"):
-#            R1.append(sample)
-#        else:
-#            R2.append(sample)
-#    if len(R1)!=len(R2):
-#        return True
-#    else:
-#        return False
+def isSingleEnd() -> bool:
+    """
+    Returns wether the fastqs are single-end=True or paired-end=False
+    """
+    R1 = list()
+    R2 = list()
+    for sample in sample_names:
+        if sample.split("_R")[1].startswith("1"):
+            R1.append(sample)
+        else:
+            R2.append(sample)
+    if len(R1)!=len(R2):
+        return True
+    else:
+        return False
+
+
+
+
+
+def getSample_names_post_mapping():# maybe wildcards ne
+	if isSingleEnd () == True:
+		return sample_names
+	else:
+		pe_samplenames = list()
+		for sample in sample_names:
+			if "_R" in sample:
+
+				if sample.split("_R")[1].startswith("1"):
+					only_sample=sample.replace('_R1','_pe')
+					pe_samplenames.append(only_sample)
+		return pe_samplenames
+
+
+
+
+
 
 if isSingleEnd() == False:
 
@@ -161,6 +183,8 @@ if isSingleEnd() == False:
             prefix = outputfolder + "/star/{short}_pe_001_",
             genDir = config["mapping"]["genomeDir"],
             mapping_dir = outputfolder+"/star",
+            work_dir = outputfolder + "/star/{short}_pe_001__STARgenome",
+
 
         resources:
             threads=lambda wildcards, attempt: attempt * 12,
@@ -173,6 +197,7 @@ if isSingleEnd() == False:
             mkdir -p {params.mapping_dir}
             STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.pe1} {input.pe2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
             chmod ago+rwx -R {params.mapping_dir} >> {log} 2>&1
+            rm -rf {params.work_dir} >> {log} 2>&1
             """
 
     
