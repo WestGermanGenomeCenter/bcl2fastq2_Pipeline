@@ -52,6 +52,8 @@ rule rseqc_gtf2bed:
         outputfolder+"/logs/rseqc_gtf2bed.log",
     conda:
         p+"/envs/gffutils.yaml"
+    message: "converting gtf to rseqc-bed..."
+
     resources:
         threads=lambda wildcards, attempt: attempt * 1,
         time_hrs=lambda wildcards, attempt: attempt * 1,
@@ -92,6 +94,8 @@ rule rseqc_main:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 3,
         mem_gb=lambda wildcards, attempt: attempt * 12
+    message: "RSeQC  Part 1/2 ..."
+
     shell:
         """
         mkdir -p {params.rseqc_dir} && mkdir -p {params.log_dir} >> {log} 2>&1

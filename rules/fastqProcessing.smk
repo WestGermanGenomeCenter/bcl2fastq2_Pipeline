@@ -624,6 +624,8 @@ rule Qualimap:
     	qualimap_report = outputfolder+"/qualimap/{file}/qualimapReport.html"
     conda:
       	p+"/envs/Qualimap.yaml"
+    message: "running Qualimap on {file}..."
+
     resources:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 4,
@@ -901,6 +903,8 @@ rule multiqc:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 1,
         mem_gb=lambda wildcards, attempt: attempt * 8
+    message: "running final MultiQC on all results ..."
+
     shell:
         """
         multiqc --filename {output}  --ignore-samples Undetermined* -x Undetermined* {params.output} -o {params.output} --no-data-dir --fullnames >> {log} 2>&1
