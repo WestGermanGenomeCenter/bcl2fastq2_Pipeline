@@ -681,7 +681,7 @@ if config["kraken2"]["kraken2_active"]:
         resources:
             threads=lambda wildcards, attempt: attempt * 2,
             time_hrs=lambda wildcards, attempt: attempt * 1,
-            mem_gb=lambda wildcards, attempt: 172 + (attempt * 10)
+            mem_gb=lambda wildcards, attempt: 172 + (attempt * 12)
 
         conda:
             p+"/envs/kraken2.yaml"
@@ -693,7 +693,7 @@ if config["kraken2"]["kraken2_active"]:
             """
             mkdir -p {params.outdir}
             mkdir -p {params.logdir} 2>{log}
-            kraken2 --use-names --db {params.kraken2_db} --threads {resources.threads} --gzip-compressed --confidence 0.05 --report {output} {input} >{params.outfile} >> {log} 2>&1
+            kraken2 --use-names --db {params.kraken2_db} --threads {resources.threads} --gzip-compressed --memory-mapping --quick --confidence 0.05 --report {output} {input} >{params.outfile} 2>{log}
             chmod -f  ago+rwx -R {params.outdir} >> {log} 2>&1
             """
 
