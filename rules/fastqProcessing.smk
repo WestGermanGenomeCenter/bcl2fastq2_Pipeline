@@ -676,7 +676,7 @@ if config["kraken2"]["kraken2_active"]:
             logdir=outputfolder+"/logs/kraken/",
             summary=outputfolder+"/kraken2/{file}.summary"
         log:
-            temp(outputfolder+"/logs/kraken/{file}.kraken2.log")
+            outputfolder+"/logs/kraken/{file}.kraken2.log"
 
         resources:
             threads=lambda wildcards, attempt: attempt * 2,
@@ -691,9 +691,9 @@ if config["kraken2"]["kraken2_active"]:
             report_file=outputfolder+"/kraken2/{file}.report"
         shell:
             """
-            mkdir -p {params.outdir}
+            mkdir -p {params.outdir} 2>{log}
             mkdir -p {params.logdir} 2>{log}
-            kraken2 --use-names --db {params.kraken2_db} --threads {resources.threads} --gzip-compressed --memory-mapping --quick --confidence 0.05 --report {output} {input} >{params.outfile} 2>{log}
+            kraken2 --use-names --db {params.kraken2_db} --threads {resources.threads} --gzip-compressed --quick --confidence 0.05 --report {output} {input} >{params.outfile} 2>{log}
             chmod -f  ago+rwx -R {params.outdir} >> {log} 2>&1
             """
 
