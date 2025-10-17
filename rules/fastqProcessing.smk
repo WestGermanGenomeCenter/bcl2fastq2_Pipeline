@@ -798,8 +798,6 @@ rule jellyfish:
         jellyfish histo -o {output.hist_file} -f {params.mer_countsfile} 2>{log}
         jellyfish stats {params.mer_countsfile} >{params.stats_file} 2>{log}
         """
-# next, motus: motus                                      2.0.1  py27_1 
-
 
 rule biobloom:
     input:
@@ -835,10 +833,6 @@ rule biobloom:
         """
 
 
-
-
-#localrules: count_matrix
-
 if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
     rule count_matrix:
         input:
@@ -856,12 +850,6 @@ if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need
             p+"/envs/pandas.yaml"
         script:
             "../scripts/count-matrix.py"
-
-
-
-
-
-
 
 
 rule transfer_files:
@@ -988,8 +976,3 @@ onerror:
 
 onstart:
     print("Setting up and running pipeline")
-
-# future directions:
-# arriba for rna fusion detection, just needs a little different star parameters: https://arriba.readthedocs.io/en/latest/workflow/
-# dupradar for duplication detection, not really needed since umi implementation: https://github.com/nf-core/rnaseq/blob/master/bin/dupradar.r
-# samshee for samplesheet checks prior to demuxing
