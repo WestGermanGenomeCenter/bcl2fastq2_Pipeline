@@ -315,40 +315,41 @@ if isSingleEnd() == True:
 
 
 
+if isSingleEnd() == True:
 
-rule FastQC_untrimmed:
-    input:
-        samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
-    params:
-    #    path=getPath,
-        fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
-        fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
-        html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
-        zip = temp(outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip"),
-        out = outputfolder
-    output:
-        zip = temp(outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip"), 
-        html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
-    resources:
-        threads=lambda wildcards, attempt: attempt * 2,
-        time_hrs=lambda wildcards, attempt: attempt * 1,
-        mem_gb=lambda wildcards, attempt: attempt * 4
-    log:
-        outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
-    conda:
-        p+"/envs/fastqc.yaml"
-    message:
-        "Run untrimmed FastQC"
-    shell:
-        """
-        mkdir -p {params.out}/fastqc_untrimmed/
-        chmod -f  ago+rwx -R {params.out}/fastqc_untrimmed/ || :
-        unset command_not_found_handle
-        fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
-        fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
-        mv {params.zip} {output.zip}
-        mv {params.html} {output.html}
-        """
+    rule FastQC_untrimmed:
+        input:
+            samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
+        params:
+        #    path=getPath,
+            fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
+            fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
+            html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
+            zip = temp(outputfolder+"/fastqc_untrimmed/{file}_fastqc.zip"),
+            out = outputfolder
+        output:
+            zip = temp(outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.zip"), 
+            html = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastqc.html",
+        resources:
+            threads=lambda wildcards, attempt: attempt * 2,
+            time_hrs=lambda wildcards, attempt: attempt * 1,
+            mem_gb=lambda wildcards, attempt: attempt * 4
+        log:
+            outputfolder+"/logs/fastqc/untrimmedFastQC{file}.log"
+        conda:
+            p+"/envs/fastqc.yaml"
+        message:
+            "Run untrimmed FastQC"
+        shell:
+            """
+            mkdir -p {params.out}/fastqc_untrimmed/
+            chmod -f  ago+rwx -R {params.out}/fastqc_untrimmed/ || :
+            unset command_not_found_handle
+            fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
+            mv {params.zip} {output.zip}
+            mv {params.html} {output.html}
+            """
 
 
 
@@ -444,6 +445,8 @@ rule stringtie:
         stringtie {input.bams} -G {params.gtf} -o {output} -A {params.tab_file} >> {log} 2>&1
         chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
+
+
 if isSingleEnd() == True:
 
     rule FastQC:
