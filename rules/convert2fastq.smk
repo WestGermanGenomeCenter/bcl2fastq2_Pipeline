@@ -56,12 +56,10 @@ def getOutput():
     all.extend(expand("{out}/{num}_software_environment_mqc_versions.yml",out=outputfolder,num=projectNum))
     all.extend(expand("{out}/{num}_config.yaml",out=outputfolder,num=projectNum))
     if config["interop_plots"]["interop_plots_active"]:
-        # done_flag=outputfolder+"/interop_plots/interop_plots_done.flag"
         all.extend(expand("{out}/interop_plots/interop_plots_done.flag",out=outputfolder))
     if config["prevent_revcomp"]["prevent_revcomp_active"]:
         all.extend(expand("{out}/revcomp_prevented.flag",out=outputfolder))
         all.extend(expand("{out}/reversed_revcomp_prevented.flag",out=outputfolder))
-        # reversed_revcomp_prevented.flag
     if config["skip_demux"]["skip_demux_active"]:
         all.extend(expand("{out}/skipped_demuxing.flag",out=outputfolder))
     if not config["skip_demux"]["skip_demux_active"]:
@@ -138,8 +136,6 @@ rule reverse_prevent_revcomp: # this rule only exists to reverse the edit of the
 if not config["skip_demux"]["skip_demux_active"]:
 
     rule check_inputs:
-   # do bclconvert, but only the check samplesheet option
-   #--bcl-validate-sample-sheet-only true
         input:
             samplesheet = config["demux"]["SampleSheet"]
         params:
@@ -240,10 +236,6 @@ if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
             touch {output}
            """
 
- 
- 
-
-
 if config["skip_demux"]["skip_demux_active"]:
 
     rule skip_demux:
@@ -288,8 +280,6 @@ def getlist_input():#
 rule create_fastq_list:
     input:
         fastqs_there= getlist_input()
-        #rules.demux.output if not config["skip_demux"]["skip_demux_active"] else rules.skip_demux.output
-
     params:
         out_fastqs_dir = config["demux"]["OutputFolder"] + "/untrimmed_fastq/"
     output:
@@ -341,7 +331,6 @@ rule copy_software_env:
 rule interop_plots:
     input:
         fastqs_there= getlist_input()
-        #rules.demux.output if not config["skip_demux"]["skip_demux_active"] else rules.skip_demux.output
     output:
         done_flag=outputfolder+"/interop_plots/interop_plots_done.flag"
     resources:

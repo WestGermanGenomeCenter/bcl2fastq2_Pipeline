@@ -12,26 +12,6 @@ outputfolder = config["demux"]["OutputFolder"]
 
 projectNum=validateProjectNum(samplesheet)
 
-#def getSample_names_post_mapping():
-#	if isSingleEnd () == True:
-#		return sample_names
-#	else:
-#		pe_samplenames = list()
-#		for sample in sample_names:
-#			if sample.split("_R")[1].startswith("1"):
-#				only_sample=sample.replace('_R1','_pe')
-#				pe_samplenames.append(only_sample)
-#		return pe_samplenames
-#
-#
-#sample_names = list()
-#if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-#    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-#    fastqs = list(samples_dataframe.iloc[:, 0].values)
-#    sample_names = [fastq[:-9] for fastq in fastqs]
-#
-
-
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)

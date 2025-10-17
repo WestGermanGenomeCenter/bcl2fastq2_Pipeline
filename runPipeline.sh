@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+
+
 # get the outputfolder out of the config.yaml file, rename the dag and report
 source ~/conda/etc/profile.d/conda.sh
 conda activate smk8
@@ -8,14 +11,16 @@ time_exec="`date +"%Y_%m_%d_%I_%M_%p"`"
 
 
 # print before execution what is on and what is off
-echo "Pre-run: options enabled:"
-echo "========================="
-grep True config.yaml | awk '{print $2,":",$1}' 
+echo "Pre-run: options enabled: "
+echo "(config.yaml option set to True)"
+echo "==================================="
+grep True config.yaml | awk '{print $2":",$1}' | sed 's/_active//g;s/_on//g;s/://g'
 echo ""
 echo ""
-echo "Pre-run: options disabled:"
-echo "========================="
-grep False config.yaml | awk '{print $2,":",$1}'
+echo "Pre-run: options disabled: "
+echo "(config.yaml option set to False)"
+echo "==================================="
+grep False config.yaml | awk '{print $2":",$1}' | sed 's/_active//g;s/_on//g;s/://g'
 echo ""
 echo ""
 

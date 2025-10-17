@@ -15,11 +15,6 @@ samplesheet = config["demux"]["SampleSheet"]
 outputfolder = config["demux"]["OutputFolder"]
 
 
-
-### include rules ###
-#include: "common.smk"
-
-
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
@@ -37,7 +32,6 @@ validRun = validateBefore(outputfolder)
 
 def get_pe_pairingsheet():
     # get samplenamespostmapping, get r1 , get r2 and save all onto a file
-    # use the old structure
     R1 = list()
     R2 = list() 
     pe_samplenames = list ()
@@ -72,10 +66,7 @@ def isSingleEnd() -> bool:
         return False
 
 
-
-
-
-def getSample_names_post_mapping():# maybe wildcards ne
+def getSample_names_post_mapping():
 	if isSingleEnd () == True:
 		return sample_names
 	else:
@@ -89,15 +80,7 @@ def getSample_names_post_mapping():# maybe wildcards ne
 		return pe_samplenames
 
 
-
-
-
-
 if isSingleEnd() == False:
-
-
-# add the second read, make mapping dependent on it
-# need to make sortmerna put out pe aswell before this works
 
 
     def get_mapping_input_pe1(wildcards):
@@ -159,21 +142,13 @@ if isSingleEnd() == False:
             """
 
 
-
-
-
-
     rule align_pe: # aligning pe can only input trimmed  or umi_extracted data, no untrimmed data allowed!
         input:
             pe1 = get_mapping_input_pe1,
             pe2 = get_mapping_input_pe2
-            #pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_trimmed.fastq.gz",
-            #pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_trimmed.fastq.gz"
         output:
             bams=outputfolder + "/star/{short}_pe_001_Aligned.sortedByCoord.out.bam", #this needs to be deduped 
             tabs=outputfolder + "/star/{short}_pe_001_ReadsPerGene.out.tab"
-#        wildcard_constraints:
-#            file="(.*(?:_).*)"
         log:
             outputfolder+"/logs/star/{short}.log"
         params:
@@ -262,8 +237,6 @@ if isSingleEnd() == False:
             chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
 
-#FastQC untrimmed missing
-
 
     if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
         rule count_matrix_pe:
@@ -290,7 +263,6 @@ if isSingleEnd() == False:
             outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
             outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
         params:
-        #    path=getPath,
             fastp_report = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.html",
             fastp_json = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.json",
             html = outputfolder+"/fastqc_untrimmed/{short}_fastqc.html",
@@ -361,7 +333,6 @@ if isSingleEnd() == False:
            in_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
            in_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
 
-           #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
        output:
            log_file1=outputfolder+"/diamond/{short}_R1_001/diamond.log",
            log_file2=outputfolder+"/diamond/{short}_R2_001/diamond.log"
@@ -374,8 +345,6 @@ if isSingleEnd() == False:
            diamond_ref_file=config["diamond"]["diamond_ref_file"],
            textfile1=outputfolder+"/diamond/{short}_R1_001/{short}_r1_diamond_output.txt",
            textfile2=outputfolder+"/diamond/{short}_R2_001/{short}_r2_diamond_output.txt",
-           #logfile_1=outputfolder+"/diamond/{short}_R1_001/diamond.log",
-           #logfile_2=outputfolder+"/diamond/{short}_R2_001/diamond.log",
            diamond_summary_file1=outputfolder+"/diamond/{short}_R1_001/{short}_diamond_output_summary.txt",
            diamond_summary_file2=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt"
 
@@ -406,7 +375,6 @@ if isSingleEnd() == False:
         input:
             sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
             sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
-            #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
         params:
             ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
             fq_rrna_string=outputfolder+"/sortmerna/{short}_ribosomal_rna",
@@ -418,15 +386,12 @@ if isSingleEnd() == False:
             fq_rrna_free1=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_fwd.fq.gz",
             fq_rrna2=outputfolder+"/sortmerna/{short}_ribosomal_rna_rev.fq.gz",
             fq_rrna_free2=outputfolder+"/sortmerna/{short}_non-ribosomal_rna_rev.fq.gz",
-
-# what the names should be
             out_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
             out_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
             out_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",
             out_rrna_free2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz",
 
         output:
-        # mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz"
             out_fq_rrna1=outputfolder+"/sortmerna/{short}_R1_001_ribosomal_rna.fq.gz",
             out_fq_rrna_free1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz",
             out_fq_rrna2=outputfolder+"/sortmerna/{short}_R2_001_ribosomal_rna.fq.gz",

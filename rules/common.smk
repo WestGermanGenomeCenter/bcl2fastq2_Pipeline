@@ -29,13 +29,6 @@ def getFiles():
     return files
 
 
- #Get the fastq.gz samples
-
-
-
-
-
-
 sample_names = list()
 if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
     samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
@@ -118,31 +111,6 @@ def getSamples(wildcards):
        	    return expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=R1and2)
 
 
-#def get_pe_pairingsheet():
-#    # get samplenamespostmapping, get r1 , get r2 and save all onto a file
-#    # use the old structure
-#    R1 = list()
-#    R2 = list() 
-#    pe_samplenames = list ()
-#    for sample in sample_names:
-#        if sample.split("_R")[1].startswith("1"):
-#            R1.append(sample)
-#            only_sample=sample.replace('_R1','_pe')
-#            pe_samplenames.append(only_sample)
-#        else:
-#            R2.append(sample)
-#
-#    df = pd.DataFrame(list(zip(R1, R2, pe_samplenames)),columns=['read1','read2','pe_samplename'])
-#
-#    df.to_csv(outputfolder+"/pe_samples.tsv", sep="\t", index=False)
-#
-#
-#only_sample=list() # if paired end, this spits out a  list of samplenames without the _R1, and only half of the fastq files 
-#for sample_full in sample_names:
-#    if sample_full.split("_R")[1].startswith("1"):
-#        only_sample_single=sample_full.replace('_R1', '')
-#        only_sample.append(only_sample_single)
-#
 def getFastqs(wildcards):
     samples = getSamples(wildcards)
     if len(samples)>1:

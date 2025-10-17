@@ -149,18 +149,6 @@ rule all:
         getOutput() if projectNum else ""
 
 
-# add rule to make wc -l checks on each file - if one is zero bytes then snakemake should not even start
-
-
-
-
-
-
-
-
-
-
-
 checkpoint check_fastq_files:
     input:
         expand("{out}/untrimmed_fastq/{file}.fastq.gz",file=sample_names,out=outputfolder)
@@ -181,19 +169,10 @@ checkpoint check_fastq_files:
 
 
 
-
-
-
-
-
-
-
-
 if isSingleEnd() == True:
 
 
 
-# need to build the same for pe aswell
 
     def get_mapping_input(wildcards):
         if config["sortmerna"]["sortmerna_active"]:
@@ -212,11 +191,7 @@ if isSingleEnd() == True:
         # change this to if paired end, only the R1 as input
             fastqs=outputfolder+"/untrimmed_fastq/{file}.fastq.gz",
             nonempty_fastqs=outputfolder+"/inputfiles_checkpoint_completed.out"
-
-            #fastq_list=get_cutadapt_input_files
         params:
-            #fastq_input=get_pe_trimming,
-            #input_fastqs=get_cutadapt_input_string,
             adapters=adaptersToStringParams(config["cutadapt"]["adapters"],config["cutadapt"]["adapter_type"]),
             otherParams=config["cutadapt"]["other_params"],
             out=outputfolder,
@@ -246,7 +221,6 @@ if isSingleEnd() == True:
     rule align:
         input:
             fastqs=get_mapping_input
-            #fastqs=outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
         output:
             bams=temp(outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam"), #this needs to be deduped 
             tabs=outputfolder + "/star/{file}_ReadsPerGene.out.tab"
@@ -309,10 +283,6 @@ if isSingleEnd() == True:
             crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.fq_in} > {output.c4gh_out} 2>{log}
             sha256sum {output} >>{params.checksum_file}
             """
-# crypt4gh encrypt --sk bob.sec $(for i in /pfad/zu/den/keys/*.pub; do echo --recipient_pk $i; done) < test > file.c4gh
-
-
-
 
 
 if isSingleEnd() == True:
@@ -321,7 +291,6 @@ if isSingleEnd() == True:
         input:
             samples = outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
         params:
-        #    path=getPath,
             fastp_report = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.html",
             fastp_json = outputfolder+"/fastqc_untrimmed/untrimmed_{file}_fastp.json",
             html = outputfolder+"/fastqc_untrimmed/{file}_fastqc.html",
@@ -515,7 +484,6 @@ if isSingleEnd() == True:
             sortmerna {params.ref_string} --reads {input} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string} >> {log} 2>&1
             #rm -rf {params.workdir} 2>{log}
             """
-# #nice sortmerna --ref rfam-5.8s-database-id98.fasta --ref silva-arc-23s-id98.fasta --ref silva-bac-23s-id98.fasta --ref silva-euk-28s-id98.fasta --reads ../../612/612-3_processed.fastq.gz --threads 64 --workdir ./sortmerna-workdir_test_13 --aligned rRna_reads_test_ --fastx --other non_rRna_reads_test_
 
     rule diamond:
         input:
@@ -548,16 +516,12 @@ if isSingleEnd() == True:
             cat {params.textfile} |sort |uniq -c | sort -n | tac >{params.diamond_summary_file}
             """
 
-# next: nice centrifuge -x nt -U ../../run_2/Batch_2/612-15_S3_R1_001.fastq.gz --out-fmt tab -q -p 32 --mm -S test_classification_test_nt_db.out --report-file centrifuge_mouse_nt_dp.report -k 1 
-
-
 
 if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
     rule umi_extract:
         input:
             outputfolder+"/untrimmed_fastq/{file}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
         params:
-            #path=getPath,
             umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
             outputf=outputfolder+"/umi_extract",
             logfolder=outputfolder+"/logs/umi_tools/",
