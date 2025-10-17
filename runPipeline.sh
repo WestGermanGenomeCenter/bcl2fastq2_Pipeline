@@ -5,6 +5,21 @@ conda activate smk8
 out="$(grep OutputFolder config.yaml -A1 | tail -n 1 | awk '{print $1}' | sed 's/"//g' )"
 mkdir -p $out
 time_exec="`date +"%Y_%m_%d_%I_%M_%p"`"
+
+
+# print before execution what is on and what is off
+echo "Pre-run: options enabled:"
+echo "========================="
+grep True config.yaml | awk '{print $2,":",$1}' 
+echo ""
+echo ""
+echo "Pre-run: options disabled:"
+echo "========================="
+grep False config.yaml | awk '{print $2,":",$1}'
+echo ""
+echo ""
+
+# actual execution
 snakemake -s rules/convert2fastq.smk --forceall --rulegraph | dot -Tpdf > $out/convert2fastq_rulegraph.$time_exec.pdf
 snakemake -s rules/convert2fastq.smk --profile pbs
 snakemake -s rules/convert2fastq.smk --report $out/convert2fastq_report.$time_exec.html

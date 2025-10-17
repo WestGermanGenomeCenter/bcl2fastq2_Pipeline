@@ -1,4 +1,4 @@
-from snakemake.utils import min_version, validate
+from snakemake.utils import min_version
 import os
 import sys
 sys.path.append(os.path.abspath(os.getcwd())+"/scripts")

@@ -1,5 +1,5 @@
 # imports
-from snakemake.utils import min_version, validate
+from snakemake.utils import min_version
 import os
 import sys
 sys.path.append(os.path.abspath(os.getcwd())+"/scripts")
@@ -11,7 +11,6 @@ p = os.path.abspath(".")
 min_version("8.28.0") # use-envmodules are not working in versions of 5.10.0 and below for clusters
 
 configfile: "config.yaml"
-validate(config, schema="../schemas/config.schema.yaml")
 samplesheet = config["demux"]["SampleSheet"]
 outputfolder = config["demux"]["OutputFolder"]
 
