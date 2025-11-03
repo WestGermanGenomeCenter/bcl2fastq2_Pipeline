@@ -229,6 +229,7 @@ if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
             """
             mkdir -p {params.out} >> {log} 2>&1
             chmod ago+rwx -R {params.out} >> {log} 2>&1
+            rm -rf {params.fastq_destination} >> {log} 2>&1
             {params.exec_path} -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {resources.threads} -p {resources.threads} 2> {log[0]}
             cp {input[0]} {params.out} >> {log} 2>&1
             mkdir -p {params.fastq_destination} >> {log} 2>&1
@@ -260,7 +261,7 @@ if config["skip_demux"]["skip_demux_active"]:
             mkdir -p {params.reports_dir}
             mkdir -p {params.untrimmed_fastq_folder}
             touch {params.reports_file}
-            cp {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
+            mv {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
             touch {output.flagfile}
             """
 
@@ -301,9 +302,9 @@ rule create_checksums:
     output:
         checksum_file=config["demux"]["OutputFolder"]+"/untrimmed_fastq/"+projectNum+"_sha256sums_fastqfiles.sha256"
     resources:
-        threads=lambda wildcards, attempt: attempt * 8,
+        threads=lambda wildcards, attempt: attempt * 16,
         time_hrs=lambda wildcards, attempt: attempt * 2,
-        mem_gb=lambda wildcards, attempt: attempt * 3
+        mem_gb=lambda wildcards, attempt: attempt * 8
     conda:
         p+"/envs/demux.yaml"
     shell:

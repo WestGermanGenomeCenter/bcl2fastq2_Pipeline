@@ -260,19 +260,21 @@ if isSingleEnd() == False:
 
     rule FastQC_untrimmed_pe:
         input:
-            outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
-            outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
+            r1 = outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
+            r2 = outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz"
         params:
             fastp_report = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.html",
             fastp_json = outputfolder+"/fastqc_untrimmed/{short}_untrimmed_fastp.json",
-            html = outputfolder+"/fastqc_untrimmed/{short}_fastqc.html",
-            zip = temp(outputfolder+"/fastqc_untrimmed/{short}_fastqc.zip"),
+            html1 = outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.html",
+            zip1 = temp(outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.zip"),
+            html2 = outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.html",
+            zip2 = temp(outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.zip"),           
             out = outputfolder
         output:
-            outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.html",
-            outputfolder+"/fastqc_untrimmed/{short}_R1_001_fastqc.zip" ,
-            outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.html",
-            outputfolder+"/fastqc_untrimmed/{short}_R2_001_fastqc.zip" ,
+            r1_h = outputfolder+"/fastqc_untrimmed/untrimmed_{short}_R1_001_fastqc.html",
+            r1_z = outputfolder+"/fastqc_untrimmed/untrimmed_{short}_R1_001_fastqc.zip" ,
+            r2_h = outputfolder+"/fastqc_untrimmed/untrimmed_{short}_R2_001_fastqc.html",
+            r2_z = outputfolder+"/fastqc_untrimmed/untrimmed_{short}_R2_001_fastqc.zip" ,
         resources:
             threads=lambda wildcards, attempt: attempt * 1,
             time_hrs=lambda wildcards, attempt: attempt * 1,
@@ -288,10 +290,13 @@ if isSingleEnd() == False:
             mkdir -p {params.out}/fastqc_untrimmed/
             chmod ago+rwx -R {params.out}/fastqc_untrimmed/ || :
             unset command_not_found_handle
-            fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+            fastqc -q --threads {resources.threads} {input.r1} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
+            fastqc -q --threads {resources.threads} {input.r2} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
             fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
-            mv {params.zip} {output.zip}
-            mv {params.html} {output.html}
+            mv {params.zip1} {output.r1_z}
+            mv {params.html1} {output.r1_h}
+            mv {params.zip2} {output.r2_z}
+            mv {params.html2} {output.r2_h}
             """
 
 
