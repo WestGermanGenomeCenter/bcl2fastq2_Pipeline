@@ -31,6 +31,9 @@ if ls $out/*config.yaml 1> /dev/null 2>&1; then
     mv -f $out/*_report*.html $out/logs/previous_executions/.
     mv -f $out/*_config.yaml $out/logs/previous_executions/.
     mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/.
+    mv -f $out/*.sha256 $out/logs/previous_executions/.
+    mv -f $out/*.filelist $out/logs/previous_executions/.
+
     echo "Files from old execution moved."
 else
     echo "No files from a previous execution found. starting..."
@@ -51,8 +54,8 @@ snakemake -s rules/fastqProcessing.smk --report $out/fastqProcessing_report.$tim
 # create checksums of all files created
 echo "Completed the run."
 echo "Creating Filelist of $out"
-find $out -type f -exec ls  -alth --time-style=long-iso {} \; | sort > $out/filelist_project_$out.$time_exec.sha256
+find $out -type f -exec ls  -alth --time-style=long-iso {} \; | sort > $out/filelist_project_$time_exec.filelist
 echo "Last Task: creating checksums:"
-echo "Creating checksumfile $out/checksums_project_$out.$time_exec.sha256 ..."
-find $out -type f -exec sha256sum {} \; | sort > $out/checksums_project_$out.$time_exec.sha256
+echo "Creating checksumfile $out/checksums_$time_exec.sha256 ..."
+find $out -type f -exec sha256sum {} \; | sort > $out/checksums_$time_exec.sha256
 echo "Done."
