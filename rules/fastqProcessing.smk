@@ -591,7 +591,7 @@ rule Qualimap:
     	qualimap_report = outputfolder+"/qualimap/{file}/qualimapReport.html"
     conda:
       	p+"/envs/Qualimap.yaml"
-    message: "running Qualimap on {file}..."
+    message: "running Qualimap on mapping output ..."
 
     resources:
         threads=lambda wildcards, attempt: attempt * 2,

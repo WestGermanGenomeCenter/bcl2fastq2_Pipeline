@@ -24,6 +24,22 @@ grep False config.yaml | awk '{print $2":",$1}' | sed 's/_active//g;s/_on//g;s/:
 echo ""
 echo ""
 
+
+if ls $out/*config.yaml 1> /dev/null 2>&1; then
+    echo "Found files from previous execution, moving them to $out/logs/previous_executions"
+    mkdir -p $out/logs/previous_executions
+    mv -f $out/*_report*.html $out/logs/previous_executions/.
+    mv -f $out/*_config.yaml $out/logs/previous_executions/.
+    mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/.
+    echo "Files from old execution moved."
+else
+    echo "No files from a previous execution found. starting..."
+fi 
+
+
+
+
+
 # actual execution
 snakemake -s rules/convert2fastq.smk --forceall --rulegraph | dot -Tpdf > $out/convert2fastq_rulegraph.$time_exec.pdf
 snakemake -s rules/convert2fastq.smk --profile pbs
