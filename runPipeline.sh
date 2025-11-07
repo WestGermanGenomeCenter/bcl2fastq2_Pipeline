@@ -47,3 +47,12 @@ snakemake -s rules/convert2fastq.smk --report $out/convert2fastq_report.$time_ex
 snakemake -s rules/fastqProcessing.smk --forceall --rulegraph | dot -Tpdf > $out/fastqProcessing_rulegraph.$time_exec.pdf
 snakemake -s rules/fastqProcessing.smk --profile pbs
 snakemake -s rules/fastqProcessing.smk --report $out/fastqProcessing_report.$time_exec.html
+
+# create checksums of all files created
+echo "Completed the run."
+echo "Creating Filelist of $out"
+find $out -type f -exec ls  -alth --time-style=long-iso {} \; | sort > $out/filelist_project_$out.$time_exec.sha256
+echo "Last Task: creating checksums:"
+echo "Creating checksumfile $out/checksums_project_$out.$time_exec.sha256 ..."
+find $out -type f -exec sha256sum {} \; | sort > $out/checksums_project_$out.$time_exec.sha256
+echo "Done."
