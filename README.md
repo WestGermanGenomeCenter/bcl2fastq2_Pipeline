@@ -30,6 +30,21 @@ The Pipeline is split into two main Parts:
 
 For example DAGs and Reports, check the examples/ folder inside this repo
 
+The demultiplexing part creates its own DAG, in a minimal setting this looks like:
+![alt text](convert_dag.png)
+
+
+Possible configuration DAG for the second part of the Pipeline:
+![alt text](dag_fastqProcessing.png)
+
+
+If enabling less and working with pe data, the DAG can also look like:
+![alt text](small_dag.png)
+
+Only enabling trimming with cutadapt given pe data yields this dag:
+![alt text](mini_dag.png)
+
+
 # General remarks: The Pipeline 
 - is setup to always use the config.yaml in the root folder
 - expects bcl2fastq2/bclconvert to be somewhere as executable (needs to be set in config.yaml)
@@ -62,6 +77,7 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
     - bcl2fastq2
     - bclconvert
     - illumina_interop
+    - Qualimap (since the conda install is broken on our HPC)
 - blast_script_dir, interop_script_path are the folder scripts/ in this repo, so filling in only "scripts/" should also work for both
 - start with only minimal options enabled, then enable more as you get familiar with how to fill in / use the config.yaml file. If you need inspiration, check the examples/ folder included in this dir.
 - kraken2 is okay with UMIs, biobloom, blast and diamond not. This is why kraken2 is started before the UMIs are potentially moved to the .fastq header, giving you a sooner glimpse of potential contamination
@@ -82,6 +98,7 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
     - BioBloom
     - BLAST
     - Diamond
+    - Kaiju
 - Jellyfish for k-mer distribution checks
 - encryption of .fastq files with crypt4gh, encryption of all output with gocryptfs also possible
 - automatic transport of all output data to other server/ scp adress
@@ -96,3 +113,13 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
 - ends in a final MultiQC report that includes a overview of all analysis done and a list of used software
 - copies samplesheet / config.yaml / software versions into output folder
 - includes creating snakemake rulegraphs and reports for each run
+
+
+# The runPipeline scripts
+The snakemake pipeline itself is executed with the runPipeline(local).sh script.
+This adds useful information like DAGs, snakemake reports and checksums.
+If needed, this can be ignored and only the snakemake itself can be executed.
+requirements for the runPipeline.sh script to work properly:
+  + is executed in an interactive job that itself runs inside a screen
+  + a conda environment "smk8" needs to be available to the executing user with snakemake 8.x installed in that environment
+  + Execution happens on the local HPC Hilbert
