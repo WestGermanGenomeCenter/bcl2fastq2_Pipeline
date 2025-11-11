@@ -25,14 +25,15 @@ echo ""
 echo ""
 
 
+
+# move old logfiles into /logs/previous_executions for old runs with the same output folder
 if ls $out/*config.yaml 1> /dev/null 2>&1; then
     echo "Found files from previous execution, moving them to $out/logs/previous_executions"
     mkdir -p $out/logs/previous_executions
-    mv -f $out/*_report*.html $out/logs/previous_executions/.
-    mv -f $out/*_config.yaml $out/logs/previous_executions/.
-    mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/.
-    mv -f $out/*.sha256 $out/logs/previous_executions/.
-    mv -f $out/*.filelist $out/logs/previous_executions/.
+    mv -f $out/*_snakemake_report*.html $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*.sha256 $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*.filelist $out/logs/previous_executions/. 2>/dev/null
 
     echo "Files from old execution moved."
 else
@@ -46,16 +47,26 @@ fi
 # actual execution
 snakemake -s rules/convert2fastq.smk --forceall --rulegraph | dot -Tpdf > $out/convert2fastq_rulegraph.$time_exec.pdf
 snakemake -s rules/convert2fastq.smk --profile pbs
-snakemake -s rules/convert2fastq.smk --report $out/convert2fastq_report.$time_exec.html
+snakemake -s rules/convert2fastq.smk --report $out/convert2fastq_snakemake_report.$time_exec.html
 snakemake -s rules/fastqProcessing.smk --forceall --rulegraph | dot -Tpdf > $out/fastqProcessing_rulegraph.$time_exec.pdf
 snakemake -s rules/fastqProcessing.smk --profile pbs
-snakemake -s rules/fastqProcessing.smk --report $out/fastqProcessing_report.$time_exec.html
+snakemake -s rules/fastqProcessing.smk --report $out/fastqProcessing_snakemake_report.$time_exec.html
 
-# create checksums of all files created
+
+
+
+# create listfile and checksum file of complete output, can be switched off.
+if [[ "$1" == "--no-checksums" ]]; then
+    echo "Skipping checksum file creation."
+else
+    echo "Creating checksum and filelist. You can skip this step by providing the --no-checksums parameter: bash runPipeline --no-checksums ."
+    echo "Creating Filelist of $out"
+    find $out -type f -exec ls  -alth --time-style=long-iso {} \; | sort > $out/filelist_project_$time_exec.filelist
+    echo "Last Task: creating checksums:"
+    echo "Creating checksumfile $out/checksums_$time_exec.sha256 ..."
+    find $out -type f -exec sha256sum {} \; | sort > $out/checksums_$time_exec.sha256
+    echo "Done."
+fi
+
+
 echo "Completed the run."
-echo "Creating Filelist of $out"
-find $out -type f -exec ls  -alth --time-style=long-iso {} \; | sort > $out/filelist_project_$time_exec.filelist
-echo "Last Task: creating checksums:"
-echo "Creating checksumfile $out/checksums_$time_exec.sha256 ..."
-find $out -type f -exec sha256sum {} \; | sort > $out/checksums_$time_exec.sha256
-echo "Done."
