@@ -7,4 +7,4 @@ channels:
 dependencies:
 #  - python=3.6.3
 #  - bedops
-  - gffutils=0.13
+  - gffutils=0.12
