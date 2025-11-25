@@ -6,11 +6,11 @@ demux:
   OutputFolder:
         "/gpfs/project/projects/bmfz_gtl/projects/1168_test1" # DO NOT end with / - just the complete dir path!!! 
 
-  options: "--no-lane-splitting true" # for this pipeline to work, no index reads .fastq files are allowed - the pe/se detector fails. please set CreateFastqForIndexReads in the settings to 0
+  options: "--no-lane-splitting true --bcl-only-matched-reads true " # for this pipeline to work, no index reads .fastq files are allowed - the pe/se detector fails. please set CreateFastqForIndexReads in the settings to 0
   bcl_convert_path: 
  #       "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts/bcl-convert" # bcl-convert Version 00.000.000.4.2.7 
         "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl_convert_436/bcl-convert" # bcl-convert Version 00.000.000.4.3.6 <- bcl-convert is the executable here # / not allowed at the end
-  demux_try1_gb: 96 # 96 GB ram for the first demultiplex try with bclconvert is reasonable ; 126 at least for novaseqx runs, doubles every trycount (2 more)
+  demux_try1_gb: 96 # 96 GB ram for the first demultiplex try with bclconvert is reasonable ; 126 at least for novaseqx
   use_bcl2fastq: True # use for miseq runs, if bclconvert gives errors
   bcl2fastq2_path: 
           "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl2fastq" # <-bcl2fastq is here the executable
