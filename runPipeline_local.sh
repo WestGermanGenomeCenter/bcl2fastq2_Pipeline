@@ -33,11 +33,11 @@ echo ""
 if ls $out/*config.yaml 1> /dev/null 2>&1; then
     echo "Found files from previous execution, moving them to $out/logs/previous_executions"
     mkdir -p $out/logs/previous_executions
-    mv -f $out/*_report*.html $out/logs/previous_executions/.
-    mv -f $out/*_config.yaml $out/logs/previous_executions/.
-    mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/.
-    mv -f $out/*.sha256 $out/logs/previous_executions/.
-    mv -f $out/*.filelist $out/logs/previous_executions/.
+    mv -f $out/*_report*.html $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*_config.yaml $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*_rulegraph*.pdf $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*.sha256 $out/logs/previous_executions/. 2>/dev/null
+    mv -f $out/*.filelist $out/logs/previous_executions/. 2>/dev/null
 
     echo "Files from old execution moved."
 else

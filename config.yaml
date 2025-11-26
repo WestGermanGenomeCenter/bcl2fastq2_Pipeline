@@ -33,8 +33,8 @@ prevent_revcomp:
 # this adds a few plots after each demultiplexing that usually can just be seen in SAV. 
 interop_plots:
     interop_plots_active: True    #only makes sense if demultiplexing is active, needs the illumina output folder
-    interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/interop-1.4.0-Linux-GNU/bin" # to get the files: go here: https://github.com/Illumina/interop/releases/tag/v1.4.0, download the .tar.gz, unpack, then the in bin/ included files need to be in the folder here
-    interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/software_tests/update_2025/scripts" # / not allowed at the end
+    interop_binaries_dir: "/gpfs/project/projects/bmfz_gtl/software/illumina/interop-1.7.0-Linux-GNU/bin" # to get the files: go here: https://github.com/Illumina/interop/releases/tag/v1.4.0, download the .tar.gz, unpack, then the in bin/ included files need to be in the folder here
+    interop_script_path: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts" # / not allowed at the end
       
 # cutadapt removes pre-defined adapters and can trim reads by quality/ length.
 # for each adapter sequence an adapter_type needs to be added aswell!       
