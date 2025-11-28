@@ -59,7 +59,7 @@ snakemake -s rules/fastqProcessing.smk --report $out/fastqProcessing_snakemake_r
 if [[ "$1" == "--no-checksums" ]]; then
     echo "Skipping checksum file creation."
 else
-    echo "Creating checksum and filelist. You can skip this step by providing the --no-checksums parameter: bash runPipeline --no-checksums ."
+    echo "Creating checksum and filelist. You can skip this step by providing the --no-checksums parameter: bash runPipeline(_local).sh --no-checksums ."
     echo "Creating Filelist of $out"
     cd $out 
     find . -type f -exec ls  -alth --time-style=long-iso {} \; | sort > filelist_project_$time_exec.filelist

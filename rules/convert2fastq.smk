@@ -192,12 +192,12 @@ if not config["skip_demux"]["skip_demux_active"]:
             """
             mkdir -p {params.output_dir} >> {log} 2>&1
             chmod ago+rwx -R {params.output_dir} >> {log} 2>&1
-            rm -f {params.outfastqs}  >> {log} 2>&1 # if demuxing fails, we dont want to append the second try to attach to first try data
+            rm -f {params.outfastqs}  >> {log} 2>&1 
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force  --bcl-num-conversion-threads {resources.threads} >> {log} 2>&1
             cp {input[0]} {params.output_dir} >> {log} 2>&1
             rm -rf {params.out_fastqs_dir}  >> {log} 2>&1 # to prevent 2 times demuxing into the same folder
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
-            mv {params.undetermined} {params.output_dir} >> {log} 2>&1
+            mv {params.undetermined} {params.output_dir} 2>/dev/null
             chmod 775 -R {params.output_dir} >> {log} 2>&1
             mv {params.Logs_path} {params.bcl_log_path} >> {log} 2>&1
             """
