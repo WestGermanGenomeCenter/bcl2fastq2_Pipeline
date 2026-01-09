@@ -22,6 +22,14 @@ then:
 
 `bash runPipeline.sh`
 
+when not using the HPC, use:
+
+`bash runPipeline_local.sh`
+
+There is also a minimal option to execute the pipeline, without the nice-to-haves of the runPipeline scripts.
+This is for testing, or if you do not like the options and things added outside of the bare snakemake pipeline:
+
+`bash runPipeline_barebone.sh`
 
 # Examples
 The Pipeline is split into two main Parts:
@@ -55,7 +63,7 @@ Only enabling trimming with cutadapt given pe data yields this dag:
     -- in essence, split the samplesheet if you want to do mapping or even more and if you only want to do basic qc on all the included projects one samplesheet is also a solution
     -- you can also demultiplex once, move/ copy the .fastq files and then use the skip_demux option to run the pipeline with one set of parameters for each project. This is the most ressource-efficient way for now.
 - can deal with .fastq files as input (if demultiplexing already happened), for this enable the skip_demux part in the config.yaml
-- can deal with paired and and single read sequencing setups. Diamond does not work with pe setups, and the naming scheme is strict (see config.yaml)
+- can deal with paired and and single read sequencing setups. With pe setups the naming scheme is strict (see config.yaml). Index read files are ignored after initial demultiplexing.
 - if qc steps are enabled that require trimming of adapters, but trimming is disabled the pipeline will trimm regardless. This is to ensure the proper input quality of data for each step.
 - The major focus here is demultiplexing of MiSeq/Nextseq2000/NovaseqX and do RNASeq analysis until transcript count tables are created
 - can deal with UMIs, even in paired end setups (check config.yaml)
@@ -63,7 +71,7 @@ Only enabling trimming with cutadapt given pe data yields this dag:
 - general deletion of data does not happen. You need to cleanup on your own.
 - expects a RunFolder as input that includes a SampleSheet. The SampleSheet needs to have a number (ProjectID) in the Filename. The RunFolder is where the demultiplexing then starts. The Samplesheet cannot be outside the root folder of the RunFolder created by Illuminas machines. See config.yaml for an example.
 - SampleSheet and OutputFolder are the only 2 required inputs in the config.yaml, all other steps can be disabled.
-- currently uses RSeQC as post-mapping QC for RNASeq runs, but only the for us useful modules of RSeQC.
+- currently uses RSeQC as post-mapping QC for RNASeq runs, but only the for us useful modules of RSeQC. Alternatively Qualimap can be used. Here the installation is not correctly handled by conda (needs to be installed with the --no-deps parameter on the HPC to avoid a failing install). Qualimap needs to be available as a executable for now. This might change in the future (check the config.yaml)
 - includes many QC steps to identify contamination, from most reliable to least: Kraken , BioBloom, BLAST, Diamond. Please be aware that either results are dependent on Quality of the input and the Database used.
 - automatically scales up the ressources for each job after a failed attempt. after 3 attempts it gives up - you can configure this in your snakemake profile.
 - many results of analyses are shown in the multiqc report complete file, but a lot of tools also put out more data then multiqc catches. Check the output folder after each run for more!
@@ -113,6 +121,7 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
 - ends in a final MultiQC report that includes a overview of all analysis done and a list of used software
 - copies samplesheet / config.yaml / software versions into output folder
 - includes creating snakemake rulegraphs and reports for each run
+- includes complete filelist and checksums of all created files as part of runPipeline(_local).sh. This can be switched off.
 
 
 # The runPipeline scripts
@@ -123,3 +132,4 @@ requirements for the runPipeline.sh script to work properly:
   + is executed in an interactive job that itself runs inside a screen
   + a conda environment "smk8" needs to be available to the executing user with snakemake 8.x installed in that environment
   + Execution happens on the local HPC Hilbert
+  + the pipeline is also tested with snakemake9+, results do not change

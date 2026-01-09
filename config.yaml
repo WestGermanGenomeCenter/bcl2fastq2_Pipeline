@@ -55,10 +55,11 @@ mapping: # transcriptome mapping happens here with STAR
 #  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl/Mus_musculus.GRCm39.111.gtf"
 #  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl"
   other_params: ""
-  stranded: "-s 1" # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1"
-  stringtie_on: True # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
-  rseqc_active: True #  qc of mapping, somewhat redundant to qualimap
+  stranded: "-s 1 -M " # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1" for forward stranded, "-s 0" for unstranded and "-s 2" for reverse strandedness" -M also counts multimapping reads
+  stringtie_on: False # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
+  rseqc_active: False #  qc of mapping, somewhat redundant to qualimap:	rseqc and qualimap do the same,	just in	different ways:	for now	please just enable one of the two, i would prefer qualimap
   qualimap_on: False # for this to work you need to manually create Qualimap env with qualimap=2.3 [--no-deps] installed, or use the local installment:
+  qualimap_parameters: "-p strand-specific-reverse" # for qualimap to work properly, you need to set the strandedness, otherwise it assumes unstrandedness: -p strand-specific-reverse strand-specific-forward, strand-specific-reverse or non-strand-specific
   qualimap_dir: "/gpfs/project/projects/bmfz_gtl/software/qualimap/qualimap_2_3/qualimap_v2.3" # an executable of qualimap needs to be in that folder, / not allowed at the end
 
 # preseq is a tool to estimate sequencing saturation # this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
@@ -67,7 +68,7 @@ preseq:
 
 # umi_tools is used in two steps to first move the umis from a defined position of the trimmed read to the read header inside the .fastq.gz files # and then after mapping with star deduplicate the mapped reads based on position and umi in the .bam files 
 umi_tools: # for this to work, cutadapt needs to be active 
-  umi_tools_active: True
+  umi_tools_active: False
  # pattern: '".+(?P<umi_1>.{8})(?P<discard_1>G{3,5})"' # TaKaRa: 8nt umi at 5' + 3-5Gs at the end  of the read {s<=2}
   pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA){s<=1}.+"' # Lexogen: 6nt umi + tata = 10nt UMI , allowing one mismatch in the spacer 
  # pattern: '"(?P<umi_1>.{6})(?P<discard_1>TATA).+"' # Lexogen: 6nt umi + tata = 10nt UMI , always with single and double quotes! 
@@ -75,18 +76,18 @@ umi_tools: # for this to work, cutadapt needs to be active
 
 # blast is used as a quick proxy for sample species estimation. only a small subset are blasted (blastn ) versus a reference-only database that is quite small only for trimmed reads as the adapter can confuse its results. # outputs a table and a summary file. also subsamples reads to speedup the process for each input file. 
 blast: # for this to work, cutadapt needs to be active
-    blast_active: True    #
+    blast_active: False    #
     blast_db: "/gpfs/project/projects/bmfz_gtl/software/blast/bigger_blastdb/bmfz_blast_big_db" # also possible: /gpfs/project/projects/bmfz_gtl/software/blast/nt /gpfs/project/projects/bmfz_gtl/software/blast/bmfz_blastdb_input.fa much smaller, but annotated
     blast_script_dir: "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts"
 
 # kraken2 is used to identify the species sequenced. helpful for contamination detection.based on kmers. using a shared database!  # since it needs 180gb of ram, these jobs are slow to start on the hpc
 kraken2:
-  kraken2_active: False   #
+  kraken2_active: True   #
   kraken2_database: "/gpfs/project/databases/Kraken2-2022-09-28/kraken_db_plus" # also possible: /gpfs/project/databases/Kraken2_refseq+hfmv # also possible: /gpfs/project/projects/bmfz_gtl/software/Kraken
 
 # kaiju is for metagenomic data only, if kraken/biobloom/blast/diamond give not a clear result, try this here
 kaiju:
-  kaiju_active: True
+  kaiju_active: False
   kaiju_db: "/gpfs/project/projects/bmfz_gtl/software/kaiju/kaiju_db_refseq_nr.fmi" 
   kaiju_nodes_dmp: "/gpfs/project/projects/bmfz_gtl/software/kaiju/nodes.dmp"
   kaiju_names_dmp: "/gpfs/project/projects/bmfz_gtl/software/kaiju/names.dmp"
@@ -103,7 +104,7 @@ biobloom:
 
 # diamond is much more efficient then blast, but here works only on protein sequences. # much faster than blast, kraken or biobloom, needs cutadapt to be active
 diamond:
-  diamond_active: True  #
+  diamond_active: False  #
   diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
 
 

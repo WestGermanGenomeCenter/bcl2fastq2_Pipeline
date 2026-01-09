@@ -584,7 +584,8 @@ rule Qualimap:
         qualimap_out =  outputfolder+"/qualimap/{file}",
         qualimap_folder = outputfolder+"/qualimap",
         qualimap_logfolder = outputfolder+"/logs/qualimap",
-        qualimap_bin_dir = config["mapping"]["qualimap_dir"]
+        qualimap_bin_dir = config["mapping"]["qualimap_dir"],
+        extra_params = config["mapping"]["qualimap_parameters"],
     log:
     	qualimap_log = outputfolder+"/logs/qualimap/qualimap_{file}.log",
     output:
@@ -602,7 +603,7 @@ rule Qualimap:
     	mkdir -p {params.qualimap_logfolder} >> {log} 2>&1
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
-    	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
+    	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} {params.extra_params} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod -f  ago+rwx -R {output} >> {log} 2>&1  
     	"""
 

@@ -6,7 +6,9 @@ channels:
   - http://conda.repo.test.hhu.de/conda-forge
 dependencies:
   - star=2.7.10b
-  - samtools
+  - samtools=1.23
   - gnuplot
   - libtiff
   - cairo
+  - libjpeg-turbo
+  - ncurses
