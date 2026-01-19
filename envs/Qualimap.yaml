@@ -4,7 +4,8 @@ channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/conda-forge
   - http://conda.repo.test.hhu.de/bioconda
-  - http://conda.repo.test.hhu.de/main
 dependencies:
-#  - qualimap=2.3 [--no-deps]
+#   - qualimap=2.3
   - r-optparse=1.7.5
+conda-forge:
+  - use_only_tar_bz2: true

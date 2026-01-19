@@ -46,6 +46,12 @@ def getOutput():
 
     if config["mapping"]["stringtie_on"]:      
         all.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
+        all.extend(expand("{out}/stringtie/transcripts_all_merged.gtf",out=outputfolder)) # for stringtie-merge command 
+        all.extend(expand("{out}/stringtie/transcript_abundances_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+
+    if config["mapping"]["rmats_on"]:      
+        all.extend(expand("{out}/rmats/summary.txt",out=outputfolder)) 
+
     if config["umi_tools"]["umi_tools_active"]:
         all.extend(expand("{out}/umi_extract/{file}.umis-extracted.fastq.gz",out=outputfolder,file=sample_names))
         all.extend(expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()))
@@ -130,7 +136,17 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
     if config["kaiju"]["kaiju_active"]:
         fastQCs.extend(expand("{out}/kaiju/kaiju_species_table_{file}.txt",out=outputfolder,file=sample_names))
-    
+
+
+    if config["mapping"]["stringtie_on"]:      
+        fastQCs.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
+        fastQCs.extend(expand("{out}/stringtie/transcripts_all_merged.gtf",out=outputfolder)) # for stringtie-merge command 
+        fastQCs.extend(expand("{out}/stringtie/transcript_abundances_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+
+    if config["mapping"]["rmats_on"]:      
+        fastQCs.extend(expand("{out}/rmats/summary.txt",out=outputfolder)) 
+
+
     return fastQCs
 
 
@@ -336,7 +352,7 @@ rule samtools:
     log:
         samtools_logfolder=outputfolder + "/logs/samtools/{file}_samtools.log"
     conda:
-        p+"/envs/STAR.yaml"
+        p+"/envs/samtools.yaml"
     message: "Running samtools on the mapped files, creating bamplots..."
 
     resources:
@@ -399,7 +415,7 @@ rule stringtie:
     log:
         outputfolder+"/logs/stringtie/stringtie_{file}.log"
     conda:
-        p+"/envs/umi_tools.yaml"
+        p+"/envs/stringtie.yaml"
     message: "stringtie: estimating spliced transcripts with mapping output..."
     resources:
         threads=lambda wildcards, attempt: attempt * 1,
@@ -411,9 +427,125 @@ rule stringtie:
         """
         mkdir -p {params.stie_log_folder}
         mkdir -p {params.out_folder} >> {log} 2>&1
-        stringtie {input.bams} -G {params.gtf} -o {output} -A {params.tab_file} >> {log} 2>&1
+        stringtie {input.bams} -G {params.gtf} -o {output} -A {params.tab_file} -p {resources.threads} >> {log} 2>&1
         chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
+
+
+rule stringtie_merge:
+    input:
+        # all stringtie outputs
+        all_gtfs= expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())
+        #         expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping())
+    params:
+        gtf=config["mapping"]["gtf_file"],
+        out_folder=outputfolder+"/stringtie/",
+        stranded_param=config["mapping"]["stranded"]
+    log:
+        outputfolder+"/logs/stringtie/stringtie_merge.log"
+    conda:
+        p+"/envs/stringtie.yaml"
+    message: "merging all stringtie output..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 10
+    output:
+        stringtie_merged=outputfolder+"/stringtie/transcripts_all_merged.gtf" # add this to needed outs if stringtie is active
+    shell:# stringtie -p 32 bam  -g ../mm39.ncbiRefSeq.gtf -o stringtie_out_2
+        """
+        stringtie --merge {input.all_gtfs} -G {params.gtf}  {params.stranded_param} -o {output.stringtie_merged} -p {resources.threads} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
+        """
+
+rule stringtie_estimate:
+    input:
+        stringtie_merged=outputfolder+"/stringtie/transcripts_all_merged.gtf", # add this to needed outs if stringtie is active
+        stringtie_out_file=outputfolder+"/stringtie/transcripts_{file}.gtf",
+        bams =outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam"
+    params:
+        gtf=config["mapping"]["gtf_file"],
+        out_folder=outputfolder+"/stringtie/",
+        stranded_param=config["mapping"]["stranded"]
+    log:
+        outputfolder+"/logs/stringtie/stringtie_estimate_{file}.log"
+    conda:
+        p+"/envs/stringtie.yaml"
+    message: "stringtie: estimating spliced transcripts from merged isoforms..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 10
+    output:
+        stringtie_out_levels=outputfolder+"/stringtie/transcript_abundances_{file}.gtf"
+    shell:# stringtie -p 32 bam  -g ../mm39.ncbiRefSeq.gtf -o stringtie_out_2
+        """
+        stringtie -e -B -G {input.stringtie_merged} {params.stranded_param} {input.bams} -o {output.stringtie_out_levels} -p {resources.threads} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
+        """
+
+
+
+
+# new, experimental part: using rmats as a complimentary tool to stringtie. this needs group definition files that will be created on-the-fly
+
+rule rmats_create_groupfiles_from_csv:
+    input:
+        sorted_bams=expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping()), # so that no samtools tmp files are used in rmats
+        bams=expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()),
+        groups_file=config["mapping"]["rmats_group_file"]
+    params:
+        script= p+ "/scripts/generate_rmats_groups.sh",
+        rmats_dir = outputfolder+"/rmats/",
+        bam_dir=outputfolder+ "/star"
+    log:
+        outputfolder+"/logs/rmats/create_rmats_groups.log"
+    conda:
+        p+"/envs/rmats.yaml"
+    message: "creating group files for rmats..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 2
+    output:
+        b1=outputfolder+"/rmats/group1_bams.txt",
+        b2=outputfolder+"/rmats/group2_bams.txt"
+    shell:
+        """
+        mkdir -p {params.rmats_dir} 2>{log}
+        {params.script} {input.groups_file} {params.bam_dir} A {output.b1} 2>{log}
+        {params.script} {input.groups_file} {params.bam_dir} B {output.b2} 2>{log}
+        """
+
+
+
+rule run_rmats:
+    input:
+        b1=outputfolder+"/rmats/group1_bams.txt",
+        b2=outputfolder+"/rmats/group2_bams.txt",
+    output:
+        rmats_summary=outputfolder+"/rmats/summary.txt",
+    params:
+        gtf=config["mapping"]["gtf_file"],
+        rmats_dir = outputfolder+"/rmats/",
+        rmats_tmp_dir = outputfolder+"/rmats/tmp",
+        read_leng=config["mapping"]["rmats_read_length"],
+        paired=config["mapping"]["rmats_paired"]
+    log:
+        outputfolder+"/logs/rmats/run_rmats.log"
+    conda:
+        p+"/envs/rmats.yaml"
+    message: "running rmats..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 4,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 8
+    shell:
+        """
+        rmats.py --b1 {input.b1} --b2 {input.b2} --gtf {params.gtf} -t {params.paired} --nthread {resources.threads} --readLength {params.read_leng} --od {params.rmats_dir} --tmp {params.rmats_tmp_dir} >> {log} 2>&1
+        """
+
+# if rmats makes problems, use https://spladder.readthedocs.io/en/latest/general.html#spladder-is-a-heuristic as a drop-in replacement
 
 
 if isSingleEnd() == True:

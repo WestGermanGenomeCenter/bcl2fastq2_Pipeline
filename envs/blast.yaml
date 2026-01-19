@@ -6,4 +6,4 @@ channels:
   - http://conda.repo.test.hhu.de/main
         
 dependencies:
-  - blast=2.16.0
+  - blast=2.17.0

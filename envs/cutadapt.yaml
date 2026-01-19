@@ -6,4 +6,4 @@ channels:
   - http://conda.repo.test.hhu.de/main
  
 dependencies:
-  - cutadapt=5.0
+  - cutadapt=5.2

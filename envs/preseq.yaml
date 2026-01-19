@@ -7,5 +7,5 @@ channels:
         
 dependencies:
   - preseq=3.2.0
-  - samtools=1.21
+  - samtools=1.23
   - bedtools=2.31.1

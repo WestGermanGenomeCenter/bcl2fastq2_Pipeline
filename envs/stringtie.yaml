@@ -1,9 +1,13 @@
-name: diamond
+name: stringtie
 channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/conda-forge
   - http://conda.repo.test.hhu.de/bioconda
   - http://conda.repo.test.hhu.de/main
-        
+
 dependencies:
-  - diamond=2.1.18
+  - umi_tools=1.1.6
+  - samtools=1.23
+  - subread=2.1.1
+  - stringtie=3.0.3
+  - pysam

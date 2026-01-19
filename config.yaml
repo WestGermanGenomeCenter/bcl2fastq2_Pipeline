@@ -2,16 +2,16 @@
 # setting a samplesheet with a project number in the filename and a output folder are the only 2 mandatory things for each run!!
 demux:
   SampleSheet:
-        /gpfs/project/projects/bmfz_gtl/devices/illumina/miseq/241001_M04304_0378_000000000-DPYVT/1168_SampleSheet.csv # this must be the sequencing device output folder if you want to demultiplex! put the samplesheet into that folder, including project number as part of the samplesheet filename.
+        /gpfs/project/projects/bmfz_gtl/devices/illumina/nextseq2000/260107_VL00286_323_AAHMFLVM5/1399_Samplesheet.csv # this must be the sequencing device output folder if you want to demultiplex! put the samplesheet into that folder, including project number as part of the samplesheet filename.
   OutputFolder:
-        "/gpfs/project/projects/bmfz_gtl/projects/1168_test1" # DO NOT end with / - just the complete dir path!!! 
+        "/gpfs/project/projects/bmfz_gtl/projects/1399_test1_dr" # DO NOT end with / - just the complete dir path!!! 
 
-  options: "--no-lane-splitting true --bcl-only-matched-reads true " # for this pipeline to work, no index reads .fastq files are allowed - the pe/se detector fails. please set CreateFastqForIndexReads in the settings to 0
+  options: "--no-lane-splitting true " # any extra command line parameters given to bclconvert.
   bcl_convert_path: 
  #       "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts/bcl-convert" # bcl-convert Version 00.000.000.4.2.7 
         "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl_convert_436/bcl-convert" # bcl-convert Version 00.000.000.4.3.6 <- bcl-convert is the executable here # / not allowed at the end
   demux_try1_gb: 96 # 96 GB ram for the first demultiplex try with bclconvert is reasonable ; 126 at least for novaseqx
-  use_bcl2fastq: True # use for miseq runs, if bclconvert gives errors
+  use_bcl2fastq: False # use for miseq runs, if bclconvert gives errors
   bcl2fastq2_path: 
           "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl2fastq" # <-bcl2fastq is here the executable
   bcl2fastq_mismatches: 1
@@ -43,24 +43,34 @@ cutadapt:
   adapters: 
     - AGATCGGAAGAGCACACGTCTGAACTCCAGTCA    
     - CTGTCTCTTATACACATCT
+    - AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+    - ACACTCTTTCCCTACACGACGCTCTTCCGATCT
+
   adapter_type: 
     - b # b for can be at both ends, a and g are for adapters expected on specific ends. b makes it more general, filtering a little better
+    - b
+    - b
     - b
   other_params: "--minimum-length 25 --quality-cutoff 5 -n 2" # very conservative, should work with any assay.
 
 mapping: # transcriptome mapping happens here with STAR
   mapping_active: True
-  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
-  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl" # / not allowed at the end
-#  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl/Mus_musculus.GRCm39.111.gtf"
-#  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl"
+#  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl/Homo_sapiens.GRCh38.111.gtf" 
+#  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/hg38/star_2710b_hg38_ensembl" # / not allowed at the end
+  gtf_file: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl/Mus_musculus.GRCm39.111.gtf"
+  genomeDir: "/gpfs/project/projects/bmfz_gtl/software/reference_genomes/mouse_ensembl"
   other_params: ""
-  stranded: "-s 1 -M " # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1" for forward stranded, "-s 0" for unstranded and "-s 2" for reverse strandedness" -M also counts multimapping reads
-  stringtie_on: False # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
+  stranded: "-s 2 " # featurecounts parameter -s , adapt this to paired ("-p") if paired- end sequencing, else "-s 1" for forward stranded, "-s 0" for unstranded and "-s 2" for reverse strandedness"
+  stringtie_on: True # if mapping is disabled, but one of these options is enabled - mapping will happen anyway
   rseqc_active: False #  qc of mapping, somewhat redundant to qualimap:	rseqc and qualimap do the same,	just in	different ways:	for now	please just enable one of the two, i would prefer qualimap
-  qualimap_on: False # for this to work you need to manually create Qualimap env with qualimap=2.3 [--no-deps] installed, or use the local installment:
+  qualimap_on: True # for this to work you need to manually create Qualimap env with qualimap=2.3 [--no-deps] installed, or use the local installment:
   qualimap_parameters: "-p strand-specific-reverse" # for qualimap to work properly, you need to set the strandedness, otherwise it assumes unstrandedness: -p strand-specific-reverse strand-specific-forward, strand-specific-reverse or non-strand-specific
   qualimap_dir: "/gpfs/project/projects/bmfz_gtl/software/qualimap/qualimap_2_3/qualimap_v2.3" # an executable of qualimap needs to be in that folder, / not allowed at the end
+  rmats_on: True
+  rmats_read_length: 100 # length of input reads. sequenced length minus umi, minus spacer, minus adapter.
+  rmats_paired: "single --libType fr-secondstrand" # Type of read used in the analysis: either "paired" for paired-end data or "single" for single-end data. Default: paired +   --libType {fr-unstranded,fr-firststrand,fr-secondstrand}                         Library type. Use fr-firststrand or fr-secondstrand for strand-specific data. Only relevant to the prep step, not the post step. Default: fr-unstranded
+  rmats_group_file: "/gpfs/project/projects/bmfz_gtl/projects/1399/star/groups.txt"
+
 
 # preseq is a tool to estimate sequencing saturation # this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
 preseq:

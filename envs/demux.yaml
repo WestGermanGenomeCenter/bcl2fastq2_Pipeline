@@ -9,4 +9,3 @@ channels:
 dependencies:
   - libgcc=7.2.0
   - zlib=1.2.13
-  - samshee=0.2.10
