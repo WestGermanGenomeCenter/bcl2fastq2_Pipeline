@@ -41,6 +41,8 @@ def getOutput():
 
     if config["mapping"]["mapping_active"]:
         all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
+        all.extend(expand("{out}/star/star_logs_summarized.csv",out=outputfolder))
+
         all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
         all.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) # test this 
 
@@ -48,6 +50,8 @@ def getOutput():
         all.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
         all.extend(expand("{out}/stringtie/transcripts_all_merged.gtf",out=outputfolder)) # for stringtie-merge command 
         all.extend(expand("{out}/stringtie/transcript_abundances_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+        all.extend(expand("{out}/gffcompare/stringtie_to_ref_comp_{file}.stats",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+
 
     if config["mapping"]["rmats_on"]:      
         all.extend(expand("{out}/rmats/summary.txt",out=outputfolder)) 
@@ -142,6 +146,8 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
         fastQCs.extend(expand("{out}/stringtie/transcripts_all_merged.gtf",out=outputfolder)) # for stringtie-merge command 
         fastQCs.extend(expand("{out}/stringtie/transcript_abundances_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+        fastQCs.extend(expand("{out}/gffcompare/stringtie_to_ref_comp_{file}.stats",out=outputfolder,file=getSample_names_post_mapping())) # for stringtie-merge command 
+
 
     if config["mapping"]["rmats_on"]:      
         fastQCs.extend(expand("{out}/rmats/summary.txt",out=outputfolder)) 
@@ -379,8 +385,8 @@ rule preseq:
     params:
         log_folder= outputfolder + "/logs/preseq/",
         preseq_folder=outputfolder + "/preseq/",
-        bed_bam=outputfolder + "/preseq/{file}_bam2bed.bed",
-        sorted_bam=outputfolder + "/star/sorted_{file}_Aligned.sortedByCoord.out.bam",
+        bed_bam=temp(outputfolder + "/preseq/{file}_bam2bed.bed"),
+        sorted_bam=temp(outputfolder + "/star/sorted_{file}_Aligned.sortedByCoord.out.bam"),
     log:
          outputfolder + "/logs/preseq/{file}_preseq.log"
     conda:
@@ -548,6 +554,32 @@ rule run_rmats:
 # if rmats makes problems, use https://spladder.readthedocs.io/en/latest/general.html#spladder-is-a-heuristic as a drop-in replacement
 
 
+rule gffcompare:
+    input:
+        stringtie_out_file=outputfolder+"/stringtie/transcripts_{file}.gtf",
+    params:
+        gtf=config["mapping"]["gtf_file"],
+        out_folder=outputfolder+"/gffcompare/",
+        stranded_param=config["mapping"]["stranded"],
+        prefi=outputfolder+"/gffcompare/stringtie_to_ref_comp_{file}"
+    log:
+        outputfolder+"/logs/gffcompare/stringtie_estimate_{file}.log"
+    conda:
+        p+"/envs/gffcompare.yaml"
+    message: "gffcompare: comparing stringtie output to the reference anntotation gtf..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 10
+    output:
+        stats_file=outputfolder+"/gffcompare/stringtie_to_ref_comp_{file}.stats"
+    shell:
+        """
+        gffcompare -r {params.gtf} {input.stringtie_out_file} -o {params.prefi} >> {log} 2>&1
+        chmod -f  ago+rwx -R {output} >> {log} 2>&1
+        """
+
+
 if isSingleEnd() == True:
 
     rule FastQC:
@@ -614,7 +646,7 @@ if isSingleEnd() == True:
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string} >> {log} 2>&1
-            #rm -rf {params.workdir} 2>{log}
+            rm -rf {params.workdir} 2> /dev/null # the cleanup step should not cause an error
             """
 
     rule diamond:
@@ -749,6 +781,8 @@ rule featurecounts:
         outdir=outputfolder+"/counts",
     conda:
         p+"/envs/umi_tools.yaml"
+    log:
+    	outputfolder+"/logs/featurecounts/featurecounts.log",
     output:
         counts_file=outputfolder+"/counts/all.tsv"
     message:"doing featurecounts on the final mapping output..."
@@ -763,6 +797,34 @@ rule featurecounts:
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
         chmod -f  ago+rwx -R {params.outdir}
         """
+
+
+rule star_result_table:
+    input:
+        expand("{out}/star/{file}_deduped.Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping()) if config["umi_tools"]["umi_tools_active"] else expand("{out}/star/{file}_Aligned.sortedByCoord.out.bam",out=outputfolder,file=getSample_names_post_mapping())
+    params:
+        script= p+"/scripts/summarize_star_out.py",
+        outdir=outputfolder+"/star",
+    conda:
+        p+"/envs/umi_tools.yaml"
+    output:
+        star_table=outputfolder+"/star/star_logs_summarized.csv",
+    message:"summarizing all star logs into one csv..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 1,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 1
+    log:
+    	outputfolder+"/logs/star/star_summary.log",
+    shell:
+        """
+        cd {params.outdir} >> {log} 2>&1
+        python {params.script} {params.outdir} {output} >> {log} 2>&1
+        chmod -f  ago+rwx -R {params.outdir} >> {log} 2>&1
+        """
+
+
+
 
 
 if config["kraken2"]["kraken2_active"]:

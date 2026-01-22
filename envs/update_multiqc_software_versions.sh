@@ -1,2 +1,2 @@
 echo "software_versions:" >software_mqc_versions.yml
-cat *.yaml | grep = | grep -v name |grep -v "#" | sed 's/- //g' | sed 's/=/:"/g' |sed 's/\:\"/\:\ \"/g' |awk '{print " ",$1,$2."\""}' | sed 's/\t/ /g' >>software_mqc_versions.yml
+cat *.yaml | grep = | grep -v name | grep -v channels  |grep -v "#" | sed 's/- //g' | sed 's/=/:"/g' |sed 's/\:\"/\:\ \"/g' |awk '{print " ",$1,$2."\""}' | sed 's/\t/ /g' >>software_mqc_versions.yml

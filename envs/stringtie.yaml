@@ -9,5 +9,5 @@ dependencies:
   - umi_tools=1.1.6
   - samtools=1.23
   - subread=2.1.1
-  - stringtie=3.0.3
+  - stringtie=3.0.0
   - pysam

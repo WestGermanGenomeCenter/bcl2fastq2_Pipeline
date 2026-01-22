@@ -143,6 +143,9 @@ if not config["skip_demux"]["skip_demux_active"]:
             bcl_convert_path = config["demux"]["bcl_convert_path"],
             output_dir = config["demux"]["OutputFolder"],
             Logs_path= config["demux"]["OutputFolder"] + "/Logs",
+            script_for_checking= p+"/scripts/bclconvert_samplesheet_check.py",
+            script_out=config["demux"]["OutputFolder"]+"/SampleSheet_check_script.out",
+            samshee_out=config["demux"]["OutputFolder"]+"/SampleSheet_check_samshee.out",
         output:
             samplesheet_errors = config["demux"]["OutputFolder"]+"/SampleSheet_check.out"
         message:
@@ -159,6 +162,8 @@ if not config["skip_demux"]["skip_demux_active"]:
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} --output-directory {params.output_dir} --bcl-validate-sample-sheet-only true  --force 2>&1>>{output}
             cat {params.Logs_path}/*.log >>{output} 
             rm -rf {params.output_dir}/Reports {params.output_dir}/Logs
+            python {params.script_for_checking} {input.samplesheet} >>{params.script_out} 2>/dev/null # should not be the reason for this rule to fail
+            # python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
             """
 
 
@@ -329,7 +334,7 @@ rule copy_software_env:
     shell:
         "cp {input.versions_file} {output.env_file} && cp config.yaml {output.config_file}"
 
-
+# add interop_more.py : python interop_more.py ../../Nextseq2000-Run324/260113_VL00286_324_AAHLCG3M5 .
 rule interop_plots:
     input:
         fastqs_there= getlist_input()
@@ -340,6 +345,7 @@ rule interop_plots:
         time_hrs=lambda wildcards, attempt: attempt * 1,
         mem_gb=lambda wildcards, attempt: attempt * 2
     params:
+        script=p+"/scripts/interop_more.py",
         interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
         output_dir=config["demux"]["OutputFolder"]+"/interop_plots",
@@ -351,7 +357,14 @@ rule interop_plots:
     log:
         outputfolder+"/logs/interop/"+projectNum+"interop_plots.log"
     shell:
-        " mkdir -p {params.log_dir} &&  mkdir -p {params.output_dir} && cd {params.output_dir} &&  bash {params.script_interop} {params.interop_dir} {params.raw_files_place} {params.output_dir}  && touch {output}"
+        """ 
+        mkdir -p {params.log_dir}
+        mkdir -p {params.output_dir}
+        cd {params.output_dir}
+        bash {params.script_interop} {params.interop_dir} {params.raw_files_place} {params.output_dir}
+        touch {output}
+        python {params.script} {params.raw_files_place} .  >> {log} 2>&1 # sadly requires pip install interop (no conda installer), and gcc is too old on the hpc 
+        """
 
 onsuccess:
     print("Workflow finished without errors")

@@ -1,11 +1,10 @@
-name: preseq
+name: gffcompare
 channels:
   - nodefaults
-  - http://conda.repo.test.hhu.de/conda-forge
   - http://conda.repo.test.hhu.de/bioconda
   - http://conda.repo.test.hhu.de/main
-        
+  - http://conda.repo.test.hhu.de/conda-forge
+
+ 
 dependencies:
-  - preseq=3.2.0
-  - samtools
-  - bedtools
+  - gffcompare=0.12.10

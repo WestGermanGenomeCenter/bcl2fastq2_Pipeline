@@ -22,6 +22,14 @@ then:
 
 `bash runPipeline.sh`
 
+the runPipeline scripts creates 2 files after the pipeline is done:
+- a list of all files inside the output folder (ls -alth)
+- a list of checksums of all files inside the output folder (sha256sum)
+if you do not want / need this, you can disable this by running:
+
+`bash runPipeline.sh --no-checksums`
+
+
 when not using the HPC, use:
 
 `bash runPipeline_local.sh`
@@ -115,6 +123,7 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
 - RseQC and samtools-plots for mapping output QC
 - preseq for sequencing saturation estimation
 - stringtie
+- rmats (very simple groups file needs to be made)
 - featurecounts for final transcript count table
 
 - can work with pe/se data, can also work with dual UMI setup
@@ -133,3 +142,17 @@ requirements for the runPipeline.sh script to work properly:
   + a conda environment "smk8" needs to be available to the executing user with snakemake 8.x installed in that environment
   + Execution happens on the local HPC Hilbert
   + the pipeline is also tested with snakemake9+, results do not change
+
+
+### the rmats group file
+There is an example rmats group file in the examples/  folder: example_rmats_group_file.txt - this fits for 7 samples in 2 groups (A and B), for now single read only:
+
+`*S1*.fastq.gz,
+*S2*.fastq.gz,
+*S3*.fastq.gz,
+*S4*.fastq.gz,
+*S5*.fastq.gz,
+*S6*.fastq.gz,
+*S7*.fastq.gz`
+
+need to be files that come from demultiplexing (or skip-demux step).
