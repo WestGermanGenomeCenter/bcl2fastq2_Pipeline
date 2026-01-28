@@ -211,8 +211,8 @@ if isSingleEnd() == False:
         params:
             out=outputfolder,
             fastp_report=outputfolder+"/fastqc/{short}_after_filtering_fastp.html",
-            fastp_json= outputfolder+"/fastqc/{short}_after_filtering_fastp.json"
-
+            fastp_json= outputfolder+"/fastqc/{short}_after_filtering_fastp.json",
+            fastqc_out_folder= outputfolder+"/fastqc",
         output:
             outputfolder+"/fastqc/{short}_R1_001_trimmed_fastqc.html",
             outputfolder+"/fastqc/{short}_R1_001_trimmed_fastqc.zip" ,

@@ -105,6 +105,7 @@ def getOutput():
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
     
     all.extend(expand("{out}/inputfiles_checkpoint_completed.out",out=outputfolder))
+    all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))            
 
     return all
 
@@ -588,6 +589,7 @@ if isSingleEnd() == True:
         params:
             #path=getPath,
             out=outputfolder,
+            fastqc_out_folder= outputfolder+"/fastqc",
             fastp_report=outputfolder+"/fastqc/{file}_after_filtering_fastp.html",
             fastp_json= outputfolder+"/fastqc/{file}_after_filtering_fastp.json"
 
@@ -600,7 +602,7 @@ if isSingleEnd() == True:
         conda:
             p+"/envs/fastqc.yaml"
         message:
-            "Run FastQC"
+            "Run FastQC, Fastp ..."
 
         resources:
             threads=lambda wildcards, attempt: attempt * 2,

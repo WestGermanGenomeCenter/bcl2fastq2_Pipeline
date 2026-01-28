@@ -346,10 +346,10 @@ rule interop_plots:
         mem_gb=lambda wildcards, attempt: attempt * 2
     params:
         script=p+"/scripts/interop_more.py",
-        interop_dir=config["interop_plots"]["interop_binaries_dir"],
+        # interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
         output_dir=config["demux"]["OutputFolder"]+"/interop_plots",
-        script_interop=config["interop_plots"]["interop_script_path"]+"/interop_plots.sh",
+        script_interop=p+"/scripts/interop_plots.sh",
         raw_files_place=getParentDir        
 
     conda:
@@ -361,9 +361,10 @@ rule interop_plots:
         mkdir -p {params.log_dir}
         mkdir -p {params.output_dir}
         cd {params.output_dir}
-        bash {params.script_interop} {params.interop_dir} {params.raw_files_place} {params.output_dir}
+        bash {params.script_interop} {params.raw_files_place} {params.output_dir}  >{log} 2> /dev/null 
         touch {output}
-        python {params.script} {params.raw_files_place} .  >> {log} 2>&1 # sadly requires pip install interop (no conda installer), and gcc is too old on the hpc 
+        # alternatively to the script, one can also interop_plot_q_score path/to/runfolder | gnuplot. the interop package is already in anaconda: illumina-interop
+        python {params.script} {params.raw_files_place} .  >{log} 2> /dev/null 
         """
 
 onsuccess:

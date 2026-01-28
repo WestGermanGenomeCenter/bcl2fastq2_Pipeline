@@ -92,7 +92,6 @@ config.yaml: sortmerna, sortmerna_reference_list: '--ref /path/to/file1 --ref /p
 - all software should be handed by snakemake / conda except: 
     - bcl2fastq2
     - bclconvert
-    - illumina_interop
     - Qualimap (since the conda install is broken on our HPC)
 - blast_script_dir, interop_script_path are the folder scripts/ in this repo, so filling in only "scripts/" should also work for both
 - start with only minimal options enabled, then enable more as you get familiar with how to fill in / use the config.yaml file. If you need inspiration, check the examples/ folder included in this dir.
