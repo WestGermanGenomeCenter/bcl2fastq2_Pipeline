@@ -149,7 +149,7 @@ if not config["skip_demux"]["skip_demux_active"]:
         output:
             samplesheet_errors = config["demux"]["OutputFolder"]+"/SampleSheet_check.out"
         message:
-            "Checking the samplesheet with bcl convert"
+            "Checking the samplesheet with bcl Convert, samshee and the python script"
         resources:
             threads=lambda wildcards, attempt: attempt * 1,
             time_hrs=lambda wildcards, attempt: attempt * 1,
@@ -161,9 +161,9 @@ if not config["skip_demux"]["skip_demux_active"]:
             mkdir -p {params.output_dir}
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} --output-directory {params.output_dir} --bcl-validate-sample-sheet-only true  --force 2>&1>>{output}
             cat {params.Logs_path}/*.log >>{output} 
-            rm -rf {params.output_dir}/Reports {params.output_dir}/Logs
+            rm -rf {params.output_dir}/Reports {params.output_dir}/Logs # just empty?
             python {params.script_for_checking} {input.samplesheet} >>{params.script_out} 2>/dev/null # should not be the reason for this rule to fail
-            # python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
+            python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
             """
 
 
@@ -197,10 +197,10 @@ if not config["skip_demux"]["skip_demux_active"]:
             """
             mkdir -p {params.output_dir} >> {log} 2>&1
             chmod ago+rwx -R {params.output_dir} >> {log} 2>&1
+            rm -rf {params.out_fastqs_dir}  >> {log} 2>&1 # to prevent 2 times demuxing into the same folder
             rm -f {params.outfastqs}  >> {log} 2>&1 
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force  --bcl-num-conversion-threads {resources.threads} >> {log} 2>&1
             cp {input[0]} {params.output_dir} >> {log} 2>&1
-            rm -rf {params.out_fastqs_dir}  >> {log} 2>&1 # to prevent 2 times demuxing into the same folder
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
             mv {params.undetermined} {params.output_dir} 2>/dev/null
             chmod 775 -R {params.output_dir} >> {log} 2>&1
