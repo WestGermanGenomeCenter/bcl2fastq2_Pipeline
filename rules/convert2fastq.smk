@@ -108,7 +108,7 @@ rule prevent_revcomp:
 
 rule reverse_prevent_revcomp: # this rule only exists to reverse the edit of the runinfo.xml if the read3 revcomp option was activated
     input:
-        demux_done=config["demux"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv",
+        demux_done=config["demux"]["OutputFolder"]+"/Reports/Adapter_Metrics.csv",
         sample_sheet=config["demux"]["SampleSheet"],
         step1_complete=config["demux"]["OutputFolder"]+"/revcomp_prevented.flag" 
 
@@ -149,7 +149,7 @@ if not config["skip_demux"]["skip_demux_active"]:
         output:
             samplesheet_errors = config["demux"]["OutputFolder"]+"/SampleSheet_check.out"
         message:
-            "Checking the samplesheet with bcl Convert, samshee and the python script"
+            "Checking the samplesheet with Bcl Convert and the python script"
         resources:
             threads=lambda wildcards, attempt: attempt * 1,
             time_hrs=lambda wildcards, attempt: attempt * 1,
@@ -163,7 +163,7 @@ if not config["skip_demux"]["skip_demux_active"]:
             cat {params.Logs_path}/*.log >>{output} 
             rm -rf {params.output_dir}/Reports {params.output_dir}/Logs # just empty?
             python {params.script_for_checking} {input.samplesheet} >>{params.script_out} 2>/dev/null # should not be the reason for this rule to fail
-            python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
+             # python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
             """
 
 
@@ -184,7 +184,7 @@ if not config["skip_demux"]["skip_demux_active"]:
         log:
             config["demux"]["OutputFolder"]+"/logs/e_bcl.log"
         output:
-            demux2Output = config["demux"]["OutputFolder"]+"/Reports/Demultiplex_Stats.csv"
+            demux2Output = config["demux"]["OutputFolder"]+"/Reports/Adapter_Metrics.csv"
         message:
             "Running bcl convert"
         resources:
@@ -251,7 +251,7 @@ if config["skip_demux"]["skip_demux_active"]:
             dir_w_fastq=config["skip_demux"]["fastq_folder"],
             out_folder=outputfolder,
             reports_dir=outputfolder +"/Reports",
-            reports_file=outputfolder +"/Reports/Demultiplex_Stats.csv",
+            reports_file=outputfolder +"/Reports/Adapter_Metrics.csv",
             untrimmed_fastq_folder=outputfolder +"/untrimmed_fastq/",
         output:
             flagfile=outputfolder+"/skipped_demuxing.flag",
@@ -343,28 +343,34 @@ rule interop_plots:
     resources:
         threads=lambda wildcards, attempt: attempt * 1,
         time_hrs=lambda wildcards, attempt: attempt * 1,
-        mem_gb=lambda wildcards, attempt: attempt * 2
+        mem_gb=lambda wildcards, attempt: attempt * 22
     params:
         script=p+"/scripts/interop_more.py",
         # interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
         output_dir=config["demux"]["OutputFolder"]+"/interop_plots",
         script_interop=p+"/scripts/interop_plots.sh",
+        cluster_pdf_script=p+"/scripts/cluster_pdf.py",
+        cluster_pdf=config["demux"]["OutputFolder"]+"/interop_plots/RunReport.pdf",
+        cluster_file=outputfolder+"/interop_plots/Sequencing_report.pdf",
         raw_files_place=getParentDir        
 
     conda:
         p+"/envs/interop.yaml"
     log:
-        outputfolder+"/logs/interop/"+projectNum+"interop_plots.log"
+        outputfolder+"/logs/interop/"+projectNum+"_interop_plots.log"
     shell:
         """ 
         mkdir -p {params.log_dir}
         mkdir -p {params.output_dir}
         cd {params.output_dir}
-        bash {params.script_interop} {params.raw_files_place} {params.output_dir}  >{log} 2> /dev/null 
-        touch {output}
+        bash {params.script_interop} {params.raw_files_place} {params.output_dir}  >> /dev/null 2>&1 
+        # add the get_cluster_numbers.py script, redirect errors to /dev/null
         # alternatively to the script, one can also interop_plot_q_score path/to/runfolder | gnuplot. the interop package is already in anaconda: illumina-interop
-        python {params.script} {params.raw_files_place} .  >{log} 2> /dev/null 
+        # interop via pip wont install on the hpc, so conda install must be enough for now. supressing all errors because of this - should work on any modern machine
+        python {params.script} {params.raw_files_place} {params.cluster_file}  >> {log} 2>&1 
+        python {params.cluster_pdf_script} {params.raw_files_place} {params.cluster_pdf} >> {log} 2>&1
+        touch {output}
         """
 
 onsuccess:

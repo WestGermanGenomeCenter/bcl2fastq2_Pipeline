@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Illumina InterOp QC Plot Generator using Python
-Compatible with NovaSeqX+, NextSeq, and MiSeq
+Compatible with NovaSeqX+, NextSeq, NextSeq2000, and MiSeq
 Generates comprehensive quality control plots for sequencing runs
 
 Usage:
-    python interop_qc_plots.py <run_folder> <output_dir>
+    python interop_more.py <run_folder> <output_pdf>
 
 Requirements:
     conda install -c bioconda illumina-interop
@@ -22,18 +22,19 @@ try:
     import numpy as np
     import pandas as pd
     import matplotlib
-    matplotlib.use('Agg')  # Non-interactive backend
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import seaborn as sns
-    from interop import py_interop_run_metrics, py_interop_run, py_interop_plot
+    from interop import py_interop_run_metrics, py_interop_run
     import interop.core as ic
-    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.pagesizes import letter, landscape
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     from datetime import datetime
+    from io import BytesIO
 except ImportError as e:
     print(f"Error: Missing required package: {e}")
     print("\nPlease install required packages:")
@@ -41,45 +42,46 @@ except ImportError as e:
     print("  conda install pandas matplotlib seaborn numpy reportlab")
     sys.exit(1)
 
-# Set style
+# Set style similar to Illumina SAV
 sns.set_style("whitegrid")
-plt.rcParams['figure.dpi'] = 300
-plt.rcParams['savefig.dpi'] = 300
+plt.rcParams['figure.dpi'] = 150
+plt.rcParams['savefig.dpi'] = 150
+plt.rcParams['font.size'] = 10
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['xtick.labelsize'] = 9
+plt.rcParams['ytick.labelsize'] = 9
+plt.rcParams['legend.fontsize'] = 9
 
-# Define consistent color palette for lanes
+# Illumina SAV color palette
 LANE_COLORS = {
-    1: '#1f77b4',  # Blue
-    2: '#ff7f0e',  # Orange
-    3: '#2ca02c',  # Green
-    4: '#d62728',  # Red
-    5: '#9467bd',  # Purple
-    6: '#8c564b',  # Brown
-    7: '#e377c2',  # Pink
-    8: '#7f7f7f',  # Gray
+    1: '#0072B2',
+    2: '#E69F00',
+    3: '#009E73',
+    4: '#D55E00',
+    5: '#CC79A7',
+    6: '#F0E442',
+    7: '#56B4E9',
+    8: '#999999',
 }
 
-# Define channel colors for FWHM
 CHANNEL_COLORS = {
-    'A': '#2ca02c',  # Green
-    'C': '#1f77b4',  # Blue
-    'G': '#000000',  # Black
-    'T': '#d62728',  # Red
+    'A': '#009E73',
+    'C': '#0072B2',
+    'G': '#000000',
+    'T': '#D55E00',
 }
 
 class InterOpQCPlotter:
     """Generate comprehensive QC plots from Illumina InterOp data"""
     
-    def __init__(self, run_folder, output_dir):
+    def __init__(self, run_folder):
         self.run_folder = Path(run_folder)
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.plot_files = []  # Track generated plot files for PDF
+        self.plot_images = []  # List of (title, description, image_data)
         
-        # Load run metrics
         print(f"[INFO] Loading run metrics from: {self.run_folder}")
         self.run_metrics = py_interop_run_metrics.run_metrics()
         
-        # Check if run folder has required files
         if not (self.run_folder / "InterOp").exists():
             raise FileNotFoundError(f"InterOp folder not found in {self.run_folder}")
         
@@ -90,7 +92,6 @@ class InterOpQCPlotter:
             print(f"[ERROR] Failed to load run metrics: {e}")
             raise
         
-        # Load imaging data
         try:
             self.imaging_df = self._load_imaging_table()
             print(f"[INFO] Loaded imaging table with {len(self.imaging_df)} rows")
@@ -98,7 +99,6 @@ class InterOpQCPlotter:
             print(f"[WARN] Could not load imaging table: {e}")
             self.imaging_df = None
         
-        # Load summary data
         try:
             self.summary_df = self._load_summary_table()
             print(f"[INFO] Loaded summary table")
@@ -111,21 +111,18 @@ class InterOpQCPlotter:
         if data is None or len(data) == 0:
             return False
         
-        # Check if all values are NaN, zero, or invalid
         if isinstance(data, pd.Series):
             valid_data = data.dropna()
             if len(valid_data) == 0:
                 return False
             if (valid_data == 0).all():
                 return False
-            # Check for meaningful variance
             if valid_data.std() < 1e-10:
                 return False
         elif isinstance(data, pd.DataFrame):
             valid_data = data.dropna(how='all')
             if len(valid_data) == 0:
                 return False
-            # Check if all numeric columns are zero
             numeric_cols = valid_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 if (valid_data[numeric_cols] == 0).all().all():
@@ -138,7 +135,6 @@ class InterOpQCPlotter:
         ar = ic.imaging(str(self.run_folder))
         df = pd.DataFrame(ar)
         
-        # Convert appropriate columns to integers
         int_cols = ['Lane', 'Tile', 'Tile Number', 'Read', 'Cycle', 
                     'Cycle Within Read', 'Swath', 'Surface']
         for col in int_cols:
@@ -153,35 +149,387 @@ class InterOpQCPlotter:
             summary_data = ic.summary(str(self.run_folder), level='Lane')
             return pd.DataFrame(summary_data)
         except:
-            # Try alternative method
-            summary_data = ic.summary(str(self.run_folder))
-            return pd.DataFrame(summary_data)
+            try:
+                summary_data = ic.summary(str(self.run_folder))
+                return pd.DataFrame(summary_data)
+            except:
+                return None
+    
+    def _save_fig_to_image(self, fig):
+        """Save figure to PNG image for PDF embedding"""
+        buf = BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        buf.seek(0)
+        plt.close(fig)
+        return buf.getvalue()
+    
+    def _get_tile_metrics(self):
+        """Extract tile metrics from run_metrics"""
+        tile_metric_set = self.run_metrics.tile_metric_set()
+        tile_data = []
+        
+        for i in range(tile_metric_set.size()):
+            metric = tile_metric_set.at(i)
+            tile_data.append({
+                'Lane': metric.lane(),
+                'Tile': metric.tile(),
+                'Cluster Count': metric.cluster_count(),
+                'Cluster Count PF': metric.cluster_count_pf(),
+                'Cluster Density': metric.cluster_density(),
+                'Cluster Density PF': metric.cluster_density_pf(),
+                'Percent PF': metric.percent_pf(),
+                'Percent Occupied': metric.percent_occupied() if hasattr(metric, 'percent_occupied') else np.nan,
+            })
+        
+        return pd.DataFrame(tile_data) if tile_data else None
+    
+    def _get_max_lanes(self):
+        """Get maximum number of lanes in flowcell"""
+        try:
+            return self.run_metrics.run_info().flowcell().lane_count()
+        except:
+            return 8
+    
+    def plot_summary_page(self):
+        """Create summary page with overall run statistics"""
+        print("[INFO] Generating summary page...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            total_clusters = tile_df['Cluster Count'].sum()
+            pf_clusters = tile_df['Cluster Count PF'].sum()
+            non_pf_clusters = total_clusters - pf_clusters
+            pct_pf = (pf_clusters / total_clusters * 100) if total_clusters > 0 else 0
+            
+            fig = plt.figure(figsize=(10, 6))
+            ax = fig.add_subplot(111)
+            ax.axis('off')
+            
+            # Summary text
+            summary_text = f"""
+ILLUMINA RUN SUMMARY REPORT
+Run Folder: {self.run_folder.name}
+Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+OVERALL CLUSTER STATISTICS
+{'─' * 60}
+
+Total Clusters:                    {total_clusters:,}
+Clusters Passing Filter (PF):      {pf_clusters:,}
+Clusters Failing Filter:           {non_pf_clusters:,}
+
+Percent PF:                        {pct_pf:.2f}%
+Percent Non-PF:                    {100 - pct_pf:.2f}%
+
+QUALITY ASSESSMENT
+{'─' * 60}
+"""
+            if pct_pf >= 80:
+                summary_text += "✓ EXCELLENT - >80% clusters passing filter\n"
+            elif pct_pf >= 70:
+                summary_text += "◐ GOOD - 70-80% clusters passing filter\n"
+            else:
+                summary_text += "✗ WARNING - <70% clusters passing filter\n"
+            
+            summary_text += f"""
+PER-LANE BREAKDOWN
+{'─' * 60}
+"""
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            for _, row in lane_groups.iterrows():
+                lane = int(row['Lane'])
+                total = int(row['Cluster Count'])
+                pf = int(row['Cluster Count PF'])
+                pct = (pf / total * 100) if total > 0 else 0
+                summary_text += f"Lane {lane}: Total={total:,}  PF={pf:,}  ({pct:.2f}%)\n"
+            
+            ax.text(0.05, 0.95, summary_text, transform=ax.transAxes,
+                   fontsize=10, verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+            
+            fig.tight_layout()
+            description = "Overall run summary showing cluster statistics and per-lane quality breakdown."
+            self.plot_images.append(('Run Summary', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created summary page")
+        except Exception as e:
+            print(f"[WARN] Could not create summary page: {e}")
+    
+    def plot_cluster_distribution(self):
+        """Plot cluster count distribution across lanes"""
+        print("[INFO] Generating cluster distribution plots...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            total_counts = lane_groups['Cluster Count'].values
+            pf_counts = lane_groups['Cluster Count PF'].values
+            non_pf_counts = total_counts - pf_counts
+            lane_list = lane_groups['Lane'].values.astype(int)
+            
+            x = np.arange(len(lane_list))
+            width = 0.6
+            
+            colors_list = [LANE_COLORS.get(lane, f'C{lane-1}') for lane in lane_list]
+            
+            ax.bar(x, pf_counts, width, label='Passing Filter', color='#2ecc71', alpha=0.8, edgecolor='black', linewidth=1)
+            ax.bar(x, non_pf_counts, width, bottom=pf_counts, label='Failing Filter', 
+                   color='#e74c3c', alpha=0.8, edgecolor='black', linewidth=1)
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Cluster Count', fontsize=11, fontweight='bold')
+            ax.set_title('Stacked Cluster Distribution: PF vs Non-PF', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lane_list])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x/1e6):.0f}M' if x >= 1e6 else f'{int(x/1e3):.0f}K'))
+            
+            fig.tight_layout()
+            description = "Stacked bar chart showing the proportion of clusters passing versus failing quality filters for each lane."
+            self.plot_images.append(('Cluster Distribution', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster distribution plot")
+        except Exception as e:
+            print(f"[WARN] Could not create cluster distribution plot: {e}")
+    
+    def plot_overall_cluster_pie(self):
+        """Plot pie chart showing overall PF vs non-PF distribution"""
+        print("[INFO] Generating cluster breakdown pie chart...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            pf = tile_df['Cluster Count PF'].sum()
+            non_pf = tile_df['Cluster Count'].sum() - pf
+            total = pf + non_pf
+            pct_pf = (pf / total * 100) if total > 0 else 0
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            sizes = [pf, non_pf]
+            labels = [f'Passing Filter\n{pf:,}\n({pct_pf:.2f}%)', 
+                     f'Failing Filter\n{non_pf:,}\n({100 - pct_pf:.2f}%)']
+            colors = ['#2ecc71', '#e74c3c']
+            explode = (0.05, 0)
+            
+            wedges, texts, autotexts = ax.pie(sizes, explode=explode, labels=labels, colors=colors, 
+                                               autopct='', shadow=True, startangle=90,
+                                               textprops={'fontsize': 11, 'fontweight': 'bold'})
+            ax.axis('equal')
+            
+            fig.tight_layout()
+            description = "Overall quality distribution showing the proportion of clusters passing versus failing quality filters across the entire run."
+            self.plot_images.append(('Overall Cluster Quality', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster breakdown pie chart")
+        except Exception as e:
+            print(f"[WARN] Could not create pie chart: {e}")
+    
+    def plot_lane_balance(self):
+        """Plot lane balance showing deviation from mean cluster count"""
+        print("[INFO] Generating lane balance plot...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            lane_groups = tile_df.groupby('Lane')['Cluster Count'].sum()
+            total_counts = [lane_groups.get(lane, 0) for lane in lanes]
+            
+            mean_count = np.mean(total_counts)
+            deviations = [(count - mean_count) / mean_count * 100 for count in total_counts]
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            colors = ['#2ecc71' if abs(d) < 10 else '#f39c12' if abs(d) < 20 else '#e74c3c' 
+                     for d in deviations]
+            
+            x = np.arange(len(lanes))
+            ax.bar(x, deviations, color=colors, alpha=0.8, edgecolor='black', linewidth=1)
+            ax.axhline(y=0, color='black', linewidth=1)
+            ax.axhline(y=10, color='orange', linestyle='--', linewidth=1.5, alpha=0.7, label='±10% threshold')
+            ax.axhline(y=-10, color='orange', linestyle='--', linewidth=1.5, alpha=0.7)
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Deviation from Mean (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Lane Balance: Cluster Count Deviation from Mean', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lanes])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            
+            for i, d in enumerate(deviations):
+                ax.text(i, d + (1 if d >= 0 else -1), f'{d:.1f}%', 
+                       ha='center', va='bottom' if d >= 0 else 'top', fontsize=9, fontweight='bold')
+            
+            fig.tight_layout()
+            description = "Lane balance analysis showing deviation from mean cluster count; lanes within ±10% indicate well-balanced sequencing."
+            self.plot_images.append(('Lane Balance', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created lane balance plot")
+        except Exception as e:
+            print(f"[WARN] Could not create lane balance plot: {e}")
+    
+    def plot_percent_pf_by_lane(self):
+        """Plot percent PF by lane"""
+        print("[INFO] Generating percent PF by lane plot...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            percent_pf = [(row['Cluster Count PF'] / row['Cluster Count'] * 100) 
+                         if row['Cluster Count'] > 0 else 0 
+                         for _, row in lane_groups.iterrows()]
+            lane_list = lane_groups['Lane'].values.astype(int)
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            x = np.arange(len(lane_list))
+            colors = ['#2ecc71' if p >= 80 else '#f39c12' if p >= 70 else '#e74c3c' for p in percent_pf]
+            
+            bars = ax.bar(x, percent_pf, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5, width=0.6)
+            ax.axhline(y=80, color='green', linestyle='--', linewidth=1.5, alpha=0.7, label='Excellent (80%)')
+            ax.axhline(y=70, color='orange', linestyle='--', linewidth=1.5, alpha=0.7, label='Good (70%)')
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('% Passing Filter', fontsize=11, fontweight='bold')
+            ax.set_title('Percentage of Clusters Passing Filter by Lane', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lane_list])
+            ax.set_ylim([0, 100])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            
+            for i, v in enumerate(percent_pf):
+                ax.text(i, v + 2, f'{v:.1f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            
+            fig.tight_layout()
+            description = "Percent passing filter per lane; >80% indicates excellent quality, 70-80% is good, <70% may indicate issues."
+            self.plot_images.append(('% PF by Lane', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created percent PF plot")
+        except Exception as e:
+            print(f"[WARN] Could not create percent PF plot: {e}")
+    
+    def plot_cluster_density_heatmap(self):
+        """Plot heatmap of cluster density across tiles"""
+        print("[INFO] Generating cluster density heatmap...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            num_lanes = len(lanes)
+            
+            if num_lanes <= 2:
+                nrows, ncols = 1, num_lanes
+                figsize = (14, 5)
+            elif num_lanes <= 4:
+                nrows, ncols = 2, 2
+                figsize = (14, 10)
+            else:
+                nrows = (num_lanes + 1) // 2
+                ncols = 2
+                figsize = (14, 5 * nrows)
+            
+            fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+            fig.suptitle('Cluster Density (PF Clusters) Distribution by Tile', fontsize=13, fontweight='bold', y=0.995)
+            
+            for idx, lane in enumerate(lanes):
+                row = idx // ncols
+                col = idx % ncols
+                ax = axes[row, col]
+                
+                lane_data = tile_df[tile_df['Lane'] == lane].sort_values('Tile')
+                tiles = lane_data['Tile'].values.astype(int)
+                densities = lane_data['Cluster Count PF'].values
+                
+                tile_positions = np.arange(len(tiles))
+                cmap = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(tiles)))
+                
+                bars = ax.bar(tile_positions, densities, color=cmap, alpha=0.8, edgecolor='black', linewidth=0.5)
+                ax.set_xlabel('Tile Index', fontsize=10, fontweight='bold')
+                ax.set_ylabel('PF Cluster Count', fontsize=10, fontweight='bold')
+                ax.set_title(f'Lane {int(lane)}', fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+                ax.set_axisbelow(True)
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x/1e3):.0f}K'))
+                
+                mean_density = np.mean(densities)
+                ax.axhline(y=mean_density, color='blue', linestyle=':', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_density:.0f}')
+                ax.legend(fontsize=8, loc='upper right')
+            
+            for idx in range(num_lanes, nrows * ncols):
+                row = idx // ncols
+                col = idx % ncols
+                axes[row, col].axis('off')
+            
+            fig.tight_layout()
+            description = "Tile-level cluster density heatmap showing uniform distribution indicates good flowcell quality; outliers suggest optical or chemistry issues."
+            self.plot_images.append(('Cluster Density Heatmap', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster density heatmap")
+        except Exception as e:
+            print(f"[WARN] Could not create cluster density heatmap: {e}")
     
     def plot_qscore_by_cycle(self):
         """Plot Q-score metrics by cycle"""
         print("[INFO] Generating Q-score by cycle plots...")
         
         if self.imaging_df is None:
-            print("[WARN] No imaging data available")
             return
         
         metrics = ['%>= Q30', 'Error Rate']
         available_metrics = [m for m in metrics if m in self.imaging_df.columns]
         
         if not available_metrics:
-            print("[WARN] Q-score metrics not available")
             return
         
         for metric in available_metrics:
             try:
-                # Check if data is valid before plotting
                 if not self._has_valid_data(self.imaging_df[metric], metric):
-                    print(f"[WARN] Skipping {metric} - no valid data")
                     continue
                 
-                fig, ax = plt.subplots(figsize=(12, 6))
+                fig, ax = plt.subplots(figsize=(10, 6))
                 
                 lanes = sorted(self.imaging_df['Lane'].unique())
+                plotted_any = False
+                
                 for lane in lanes:
                     lane_data = self.imaging_df[self.imaging_df['Lane'] == lane]
                     cycle_mean = lane_data.groupby('Cycle')[metric].mean()
@@ -191,141 +539,72 @@ class InterOpQCPlotter:
                     
                     color = LANE_COLORS.get(lane, f'C{lane-1}')
                     ax.plot(cycle_mean.index, cycle_mean.values, 
-                           label=f'Lane {lane}', linewidth=2, alpha=0.8, color=color)
+                           label=f'Lane {lane}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
+                    plotted_any = True
                 
-                # Check if any lines were plotted
-                if len(ax.lines) == 0:
-                    plt.close()
-                    print(f"[WARN] Skipping {metric} - no valid data to plot")
+                if not plotted_any:
+                    plt.close(fig)
                     continue
                 
-                ax.set_xlabel('Cycle', fontsize=12)
-                ax.set_ylabel(metric, fontsize=12)
-                ax.set_title(f'{metric} by Cycle', fontsize=14, fontweight='bold')
-                ax.legend()
-                ax.grid(True, alpha=0.3)
+                ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+                ax.set_ylabel(metric, fontsize=11, fontweight='bold')
+                ax.set_title(f'{metric} by Cycle', fontsize=13, fontweight='bold')
+                ax.legend(loc='best', framealpha=0.95, ncol=4)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.set_axisbelow(True)
+                fig.tight_layout()
                 
-                safe_name = metric.replace('>=', 'ge').replace('%', 'pct').replace(' ', '_')
-                plot_path = self.output_dir / f'01_{safe_name}_by_cycle.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'{metric} by Cycle', str(plot_path)))
-                print(f"  ✓ Created {safe_name}_by_cycle.png")
+                description = f"Per-cycle {metric} shows sequencing quality across all lanes; declining quality indicates run issues."
+                self.plot_images.append((f'{metric} by Cycle', description, self._save_fig_to_image(fig)))
+                print(f"  ✓ Created {metric} plot")
             except Exception as e:
                 print(f"[WARN] Could not create {metric} plot: {e}")
     
-    def plot_density_metrics(self):
-        """Plot cluster density metrics"""
-        print("[INFO] Generating density plots...")
-        
-        if self.imaging_df is None:
-            return
-        
-        density_cols = [col for col in self.imaging_df.columns 
-                       if 'Density' in col or 'Cluster Count' in col]
-        
-        for metric in density_cols:
-            try:
-                if not self._has_valid_data(self.imaging_df[metric], metric):
-                    print(f"[WARN] Skipping {metric} - no valid data")
-                    continue
-                
-                fig, ax = plt.subplots(figsize=(10, 6))
-                
-                lane_means = self.imaging_df.groupby('Lane')[metric].mean()
-                lanes = lane_means.index.tolist()
-                colors = [LANE_COLORS.get(lane, f'C{lane-1}') for lane in lanes]
-                
-                ax.bar(lanes, lane_means.values, alpha=0.7, color=colors)
-                
-                ax.set_xlabel('Lane', fontsize=12)
-                ax.set_ylabel(metric, fontsize=12)
-                ax.set_title(f'{metric} by Lane', fontsize=14, fontweight='bold')
-                ax.grid(True, alpha=0.3, axis='y')
-                
-                safe_name = metric.replace('/', '_').replace(' ', '_').replace('(', '').replace(')', '')
-                plot_path = self.output_dir / f'02_{safe_name}_by_lane.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'{metric} by Lane', str(plot_path)))
-                print(f"  ✓ Created {safe_name}_by_lane.png")
-            except Exception as e:
-                print(f"[WARN] Could not create {metric} plot: {e}")
-    
-    def plot_intensity_metrics(self):
+    def plot_intensity_distribution(self):
         """Plot intensity metrics by cycle"""
         print("[INFO] Generating intensity plots...")
         
         if self.imaging_df is None:
             return
         
-        # Look for intensity-related columns
         intensity_cols = [col for col in self.imaging_df.columns 
-                         if any(x in col for x in ['Corrected', 'Called', 'Intensity', 'P90'])]
+                         if any(x in col for x in ['Intensity', 'Corrected', 'Called'])]
         
         if not intensity_cols:
-            print("[WARN] No intensity metrics found")
             return
         
-        # Group by base if available
-        base_metrics = {}
-        for col in intensity_cols:
-            if '/' in col:
-                metric_type, base = col.rsplit('/', 1)
-                if metric_type not in base_metrics:
-                    base_metrics[metric_type] = []
-                base_metrics[metric_type].append(col)
-        
-        for metric_type, cols in base_metrics.items():
-            try:
-                # Check if any of the columns have valid data
-                has_valid = False
-                for col in cols:
-                    if self._has_valid_data(self.imaging_df[col], col):
-                        has_valid = True
-                        break
-                
-                if not has_valid:
-                    print(f"[WARN] Skipping {metric_type} - no valid data")
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            cycle_data = self.imaging_df.groupby('Cycle')[intensity_cols].mean()
+            
+            plotted_any = False
+            for col in intensity_cols:
+                if not self._has_valid_data(cycle_data[col], col):
                     continue
                 
-                fig, ax = plt.subplots(figsize=(12, 6))
-                
-                cycle_data = self.imaging_df.groupby('Cycle')[cols].mean()
-                
-                plotted_any = False
-                for col in cols:
-                    if not self._has_valid_data(cycle_data[col], col):
-                        continue
-                    
-                    base = col.split('/')[-1]
-                    color = CHANNEL_COLORS.get(base, None)
-                    ax.plot(cycle_data.index, cycle_data[col], 
-                           label=base, linewidth=2, alpha=0.8, color=color)
-                    plotted_any = True
-                
-                if not plotted_any:
-                    plt.close()
-                    print(f"[WARN] Skipping {metric_type} - no valid data to plot")
-                    continue
-                
-                ax.set_xlabel('Cycle', fontsize=12)
-                ax.set_ylabel('Intensity', fontsize=12)
-                ax.set_title(f'{metric_type} by Cycle', fontsize=14, fontweight='bold')
-                ax.legend()
-                ax.grid(True, alpha=0.3)
-                
-                safe_name = metric_type.replace('/', '_').replace(' ', '_')
-                plot_path = self.output_dir / f'03_{safe_name}_by_cycle.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'{metric_type} by Cycle', str(plot_path)))
-                print(f"  ✓ Created {safe_name}_by_cycle.png")
-            except Exception as e:
-                print(f"[WARN] Could not create {metric_type} plot: {e}")
+                label = col
+                ax.plot(cycle_data.index, cycle_data[col], 
+                       label=label, linewidth=2.5, alpha=0.8, marker='o', markersize=3)
+                plotted_any = True
+            
+            if not plotted_any:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Intensity (AU)', fontsize=11, fontweight='bold')
+            ax.set_title('Intensity Metrics by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Average signal intensity across all reads and lanes shows overall photometric quality; declining intensity indicates optical degradation."
+            self.plot_images.append(('Intensity Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created intensity plot")
+        except Exception as e:
+            print(f"[WARN] Could not create intensity plot: {e}")
     
     def plot_base_composition(self):
         """Plot base composition by cycle"""
@@ -334,57 +613,43 @@ class InterOpQCPlotter:
         if self.imaging_df is None:
             return
         
-        base_cols = [col for col in self.imaging_df.columns if '% Base' in col]
+        base_cols = [col for col in self.imaging_df.columns if '% Base' in col or '%Base' in col]
         
         if not base_cols:
-            print("[WARN] Base composition data not available")
             return
         
         try:
-            # Check if any columns have valid data
-            has_valid = False
-            for col in base_cols:
-                if self._has_valid_data(self.imaging_df[col], col):
-                    has_valid = True
-                    break
-            
-            if not has_valid:
-                print("[WARN] Skipping base composition - no valid data")
-                return
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
+            fig, ax = plt.subplots(figsize=(10, 6))
             
             cycle_data = self.imaging_df.groupby('Cycle')[base_cols].mean()
             
-            plotted_any = False
+            has_data = False
             for col in base_cols:
                 if not self._has_valid_data(cycle_data[col], col):
                     continue
                 
-                base = col.split('/')[-1]
+                base = col.split('/')[-1] if '/' in col else col
                 color = CHANNEL_COLORS.get(base, None)
                 ax.plot(cycle_data.index, cycle_data[col], 
-                       label=f'Base {base}', linewidth=2, alpha=0.8, color=color)
-                plotted_any = True
+                       label=f'Base {base}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
+                has_data = True
             
-            if not plotted_any:
-                plt.close()
-                print("[WARN] Skipping base composition - no valid data to plot")
+            if not has_data:
+                plt.close(fig)
                 return
             
-            ax.set_xlabel('Cycle', fontsize=12)
-            ax.set_ylabel('% Base', fontsize=12)
-            ax.set_title('Base Composition by Cycle', fontsize=14, fontweight='bold')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Percentage (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Base Composition by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
             ax.set_ylim([0, 100])
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
             
-            plot_path = self.output_dir / '04_base_composition_by_cycle.png'
-            plt.tight_layout()
-            plt.savefig(plot_path, bbox_inches='tight')
-            plt.close()
-            self.plot_files.append(('Base Composition by Cycle', str(plot_path)))
-            print("  ✓ Created base_composition_by_cycle.png")
+            description = "Per-cycle distribution of the four DNA bases (A, C, G, T) detects nucleotide imbalance or contamination."
+            self.plot_images.append(('Base Composition', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created base composition plot")
         except Exception as e:
             print(f"[WARN] Could not create base composition plot: {e}")
     
@@ -398,89 +663,102 @@ class InterOpQCPlotter:
         fwhm_cols = [col for col in self.imaging_df.columns if 'Fwhm' in col or 'FWHM' in col]
         
         if not fwhm_cols:
-            print("[WARN] FWHM data not available")
             return
         
         try:
-            # Check if any columns have valid data
-            has_valid = False
-            for col in fwhm_cols:
-                if self._has_valid_data(self.imaging_df[col], col):
-                    has_valid = True
-                    break
+            fig, ax = plt.subplots(figsize=(10, 6))
             
-            if not has_valid:
-                print("[WARN] Skipping FWHM - no valid data")
-                return
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
-            
-            cycle_data = self.imaging_df.groupby('Cycle')[fwhm_cols].mean()
-            
-            plotted_any = False
-            for col in fwhm_cols:
-                if not self._has_valid_data(cycle_data[col], col):
+            has_data = False
+            for metric in fwhm_cols:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
                     continue
                 
-                if '/' in col:
-                    channel = col.split('/')[-1].upper()
-                    label = f'Channel {channel}'
-                    # Map channel to color: A=Green, C=Blue
-                    if channel == 'A' or 'green' in col.lower():
-                        color = '#2ca02c'  # Green
-                    elif channel == 'C' or 'blue' in col.lower():
-                        color = '#1f77b4'  # Blue
-                    else:
-                        color = CHANNEL_COLORS.get(channel, None)
-                else:
-                    label = col
-                    color = None
-                
-                ax.plot(cycle_data.index, cycle_data[col], 
-                       label=label, linewidth=2, alpha=0.8, color=color)
-                plotted_any = True
+                cycle_mean = self.imaging_df.groupby('Cycle')[metric].mean()
+                ax.plot(cycle_mean.index, cycle_mean.values, 
+                       label=metric, linewidth=2.5, alpha=0.8, marker='s', markersize=4)
+                has_data = True
             
-            if not plotted_any:
-                plt.close()
-                print("[WARN] Skipping FWHM - no valid data to plot")
+            if not has_data:
+                plt.close(fig)
                 return
             
-            ax.set_xlabel('Cycle', fontsize=12)
-            ax.set_ylabel('FWHM', fontsize=12)
-            ax.set_title('FWHM (Focus Metric) by Cycle', fontsize=14, fontweight='bold')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('FWHM', fontsize=11, fontweight='bold')
+            ax.set_title('FWHM (Focus Metric) by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
             
-            plot_path = self.output_dir / '05_fwhm_by_cycle.png'
-            plt.tight_layout()
-            plt.savefig(plot_path, bbox_inches='tight')
-            plt.close()
-            self.plot_files.append(('FWHM by Cycle', str(plot_path)))
-            print("  ✓ Created fwhm_by_cycle.png")
+            description = "Full Width at Half Maximum measures optical focus quality; higher values indicate worse focus and potential quality issues."
+            self.plot_images.append(('FWHM Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created FWHM plot")
         except Exception as e:
             print(f"[WARN] Could not create FWHM plot: {e}")
     
-    def plot_occupancy(self):
-        """Plot occupancy metrics (for patterned flowcells)"""
-        print("[INFO] Generating occupancy plots...")
+    def plot_phasing_prephasing(self):
+        """Plot phasing and prephasing metrics"""
+        print("[INFO] Generating phasing plots...")
         
         if self.imaging_df is None:
             return
         
-        occ_cols = [col for col in self.imaging_df.columns 
-                   if 'Occupancy' in col or 'Occupied' in col]
+        phasing_cols = [col for col in self.imaging_df.columns 
+                       if 'Phasing' in col or 'Prephasing' in col]
         
-        if not occ_cols:
-            print("[WARN] Occupancy data not available (may not be patterned flowcell)")
+        if not phasing_cols:
             return
         
-        for metric in occ_cols:
-            try:
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            has_data = False
+            for metric in phasing_cols:
                 if not self._has_valid_data(self.imaging_df[metric], metric):
-                    print(f"[WARN] Skipping {metric} - no valid data")
                     continue
                 
-                fig, ax = plt.subplots(figsize=(12, 6))
+                cycle_mean = self.imaging_df.groupby('Cycle')[metric].mean()
+                ax.plot(cycle_mean.index, cycle_mean.values, 
+                       label=metric, linewidth=2.5, alpha=0.8, marker='o', markersize=4)
+                has_data = True
+            
+            if not has_data:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Percentage (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Phasing/Prephasing by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Phasing and prephasing rates measure template strand synchronization issues that accumulate over sequencing cycles."
+            self.plot_images.append(('Phasing Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created phasing plot")
+        except Exception as e:
+            print(f"[WARN] Could not create phasing plot: {e}")
+    
+    def plot_q40_metrics(self):
+        """Plot % clusters with Q >= Q40 if available"""
+        print("[INFO] Generating Q40 plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        q40_cols = [col for col in self.imaging_df.columns if 'Q40' in col or 'Q>=40' in col]
+        
+        if not q40_cols:
+            print("[WARN] No Q40 metrics available")
+            return
+        
+        for metric in q40_cols:
+            try:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
+                    continue
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
                 
                 lanes = sorted(self.imaging_df['Lane'].unique())
                 plotted_any = False
@@ -494,281 +772,32 @@ class InterOpQCPlotter:
                     
                     color = LANE_COLORS.get(lane, f'C{lane-1}')
                     ax.plot(cycle_mean.index, cycle_mean.values, 
-                           label=f'Lane {lane}', linewidth=2, alpha=0.8, color=color)
+                           label=f'Lane {lane}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
                     plotted_any = True
                 
                 if not plotted_any:
-                    plt.close()
-                    print(f"[WARN] Skipping {metric} - no valid data to plot")
+                    plt.close(fig)
                     continue
                 
-                ax.set_xlabel('Cycle', fontsize=12)
-                ax.set_ylabel(metric, fontsize=12)
-                ax.set_title(f'{metric} by Cycle', fontsize=14, fontweight='bold')
-                ax.legend()
-                ax.grid(True, alpha=0.3)
+                ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+                ax.set_ylabel(metric, fontsize=11, fontweight='bold')
+                ax.set_title(f'{metric} by Cycle', fontsize=13, fontweight='bold')
+                ax.legend(loc='best', framealpha=0.95, ncol=4)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.set_axisbelow(True)
+                fig.tight_layout()
                 
-                safe_name = metric.replace('%', 'pct').replace(' ', '_')
-                plot_path = self.output_dir / f'06_{safe_name}_by_cycle.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'{metric} by Cycle', str(plot_path)))
-                print(f"  ✓ Created {safe_name}_by_cycle.png")
+                description = f"Percentage of clusters achieving Q≥40 quality score by cycle indicates high-confidence base calling performance."
+                self.plot_images.append((f'Q40 Metrics', description, self._save_fig_to_image(fig)))
+                print(f"  ✓ Created Q40 metrics plot")
             except Exception as e:
-                print(f"[WARN] Could not create {metric} plot: {e}")
+                print(f"[WARN] Could not create Q40 plot: {e}")
     
-    def plot_phasing_metrics(self):
-        """Plot phasing and prephasing metrics"""
-        print("[INFO] Generating phasing plots...")
-        
-        if self.imaging_df is None:
-            return
-        
-        phasing_cols = [col for col in self.imaging_df.columns 
-                       if 'Phasing' in col or 'Prephasing' in col]
-        
-        if not phasing_cols:
-            print("[WARN] Phasing data not available")
-            return
-        
-        try:
-            # Check if any columns have valid data
-            has_valid = False
-            for col in phasing_cols:
-                if self._has_valid_data(self.imaging_df[col], col):
-                    has_valid = True
-                    break
-            
-            if not has_valid:
-                print("[WARN] Skipping phasing metrics - no valid data")
-                return
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
-            
-            plotted_any = False
-            for metric in phasing_cols:
-                if not self._has_valid_data(self.imaging_df[metric], metric):
-                    continue
-                
-                cycle_mean = self.imaging_df.groupby('Cycle')[metric].mean()
-                ax.plot(cycle_mean.index, cycle_mean.values, 
-                       label=metric, linewidth=2, alpha=0.8, marker='o', markersize=3)
-                plotted_any = True
-            
-            if not plotted_any:
-                plt.close()
-                print("[WARN] Skipping phasing metrics - no valid data to plot")
-                return
-            
-            ax.set_xlabel('Cycle', fontsize=12)
-            ax.set_ylabel('Percentage', fontsize=12)
-            ax.set_title('Phasing/Prephasing by Cycle', fontsize=14, fontweight='bold')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-            
-            plot_path = self.output_dir / '07_phasing_by_cycle.png'
-            plt.tight_layout()
-            plt.savefig(plot_path, bbox_inches='tight')
-            plt.close()
-            self.plot_files.append(('Phasing by Cycle', str(plot_path)))
-            print("  ✓ Created phasing_by_cycle.png")
-        except Exception as e:
-            print(f"[WARN] Could not create phasing plot: {e}")
-    
-    def plot_passfilter_distribution(self):
-        """Plot pass filter distribution"""
-        print("[INFO] Generating pass filter plots...")
-        
-        if self.imaging_df is None:
-            return
-        
-        pf_cols = [col for col in self.imaging_df.columns if 'Pass Filter' in col]
-        
-        if not pf_cols:
-            print("[WARN] Pass filter data not available")
-            return
-        
-        for metric in pf_cols:
-            try:
-                if not self._has_valid_data(self.imaging_df[metric], metric):
-                    print(f"[WARN] Skipping {metric} - no valid data")
-                    continue
-                
-                fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-                
-                # By cycle
-                lanes = sorted(self.imaging_df['Lane'].unique())
-                plotted_cycle = False
-                
-                for lane in lanes:
-                    lane_data = self.imaging_df[self.imaging_df['Lane'] == lane]
-                    cycle_mean = lane_data.groupby('Cycle')[metric].mean()
-                    
-                    if not self._has_valid_data(cycle_mean, f"{metric}_lane{lane}"):
-                        continue
-                    
-                    color = LANE_COLORS.get(lane, f'C{lane-1}')
-                    axes[0].plot(cycle_mean.index, cycle_mean.values, 
-                               label=f'Lane {lane}', linewidth=2, alpha=0.8, color=color)
-                    plotted_cycle = True
-                
-                if not plotted_cycle:
-                    plt.close()
-                    print(f"[WARN] Skipping {metric} - no valid data to plot")
-                    continue
-                
-                axes[0].set_xlabel('Cycle', fontsize=12)
-                axes[0].set_ylabel(metric, fontsize=12)
-                axes[0].set_title(f'{metric} by Cycle', fontsize=12, fontweight='bold')
-                axes[0].legend()
-                axes[0].grid(True, alpha=0.3)
-                
-                # By lane (box plot)
-                lane_data_list = [self.imaging_df[self.imaging_df['Lane'] == lane][metric].values 
-                                 for lane in lanes]
-                bp = axes[1].boxplot(lane_data_list, labels=lanes, patch_artist=True)
-                
-                # Color boxes by lane
-                for patch, lane in zip(bp['boxes'], lanes):
-                    color = LANE_COLORS.get(lane, f'C{lane-1}')
-                    patch.set_facecolor(color)
-                    patch.set_alpha(0.7)
-                
-                axes[1].set_xlabel('Lane', fontsize=12)
-                axes[1].set_ylabel(metric, fontsize=12)
-                axes[1].set_title(f'{metric} Distribution by Lane', fontsize=12, fontweight='bold')
-                axes[1].grid(True, alpha=0.3, axis='y')
-                
-                plot_path = self.output_dir / '08_passfilter_analysis.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'{metric} Analysis', str(plot_path)))
-                print("  ✓ Created passfilter_analysis.png")
-            except Exception as e:
-                print(f"[WARN] Could not create pass filter plot: {e}")
-    
-    def plot_tile_heatmap(self):
-        """Generate heatmap of metrics across tiles"""
-        print("[INFO] Generating tile heatmaps...")
-        
-        if self.imaging_df is None or 'Tile' not in self.imaging_df.columns:
-            return
-        
-        # Select key metrics for heatmap
-        heatmap_metrics = []
-        for metric in ['%>= Q30', '% Pass Filter', 'Cluster Count PF (k)', 'Error Rate']:
-            if metric in self.imaging_df.columns:
-                heatmap_metrics.append(metric)
-        
-        if not heatmap_metrics:
-            print("[WARN] No suitable metrics for tile heatmap")
-            return
-        
-        for metric in heatmap_metrics:
-            try:
-                # Get first cycle data for simplicity
-                first_cycle = self.imaging_df[self.imaging_df['Cycle'] == 1].copy()
-                
-                if len(first_cycle) == 0:
-                    continue
-                
-                pivot_data = first_cycle.pivot_table(
-                    values=metric,
-                    index='Tile',
-                    columns='Lane',
-                    aggfunc='mean'
-                )
-                
-                fig, ax = plt.subplots(figsize=(12, 10))
-                sns.heatmap(pivot_data, annot=False, cmap='RdYlGn', 
-                           cbar_kws={'label': metric}, ax=ax)
-                ax.set_title(f'{metric} Across Tiles (Cycle 1)', 
-                            fontsize=14, fontweight='bold')
-                ax.set_xlabel('Lane', fontsize=12)
-                ax.set_ylabel('Tile', fontsize=12)
-                
-                safe_name = metric.replace('>=', 'ge').replace('%', 'pct').replace(' ', '_').replace('(', '').replace(')', '')
-                plot_path = self.output_dir / f'09_tile_heatmap_{safe_name}.png'
-                plt.tight_layout()
-                plt.savefig(plot_path, bbox_inches='tight')
-                plt.close()
-                self.plot_files.append((f'Tile Heatmap: {metric}', str(plot_path)))
-                print(f"  ✓ Created tile_heatmap_{safe_name}.png")
-            except Exception as e:
-                print(f"[WARN] Could not create tile heatmap for {metric}: {e}")
-    
-    def generate_summary_report(self):
-        """Generate text summary report"""
-        print("[INFO] Generating summary report...")
-        
-        report_path = self.output_dir / 'summary_report.txt'
-        
-        with open(report_path, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("ILLUMINA SEQUENCING RUN QC REPORT\n")
-            f.write("=" * 80 + "\n\n")
-            
-            f.write(f"Run Folder: {self.run_folder.name}\n")
-            f.write(f"Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            # Run info
-            try:
-                run_info = self.run_metrics.run_info()
-                f.write(f"Flowcell ID: {run_info.flowcell().name()}\n")
-                f.write(f"Total Cycles: {run_info.total_cycles()}\n")
-                f.write(f"Reads: {run_info.reads().size()}\n")
-                
-                for i in range(run_info.reads().size()):
-                    read = run_info.reads()[i]
-                    f.write(f"  Read {i+1}: {read.total_cycles()} cycles")
-                    if read.is_index():
-                        f.write(" (Index)")
-                    f.write("\n")
-                f.write("\n")
-            except Exception as e:
-                f.write(f"Run info unavailable: {e}\n\n")
-            
-            # Summary statistics
-            if self.summary_df is not None:
-                f.write("SUMMARY STATISTICS\n")
-                f.write("-" * 80 + "\n")
-                f.write(self.summary_df.to_string())
-                f.write("\n\n")
-            
-            # Imaging statistics
-            if self.imaging_df is not None:
-                f.write("IMAGING METRICS SUMMARY\n")
-                f.write("-" * 80 + "\n")
-                
-                numeric_cols = self.imaging_df.select_dtypes(include=[np.number]).columns
-                summary_stats = self.imaging_df[numeric_cols].describe()
-                f.write(summary_stats.to_string())
-                f.write("\n\n")
-        
-        print(f"  ✓ Created summary_report.txt")
-    
-    def export_csv_tables(self):
-        """Export data tables to CSV"""
-        print("[INFO] Exporting CSV tables...")
-        
-        if self.imaging_df is not None:
-            csv_path = self.output_dir / 'imaging_metrics.csv'
-            self.imaging_df.to_csv(csv_path, index=False)
-            print(f"  ✓ Created imaging_metrics.csv")
-        
-        if self.summary_df is not None:
-            csv_path = self.output_dir / 'summary_metrics.csv'
-            self.summary_df.to_csv(csv_path, index=False)
-            print(f"  ✓ Created summary_metrics.csv")
-    
-    def generate_pdf_report(self):
+    def generate_pdf_report(self, output_pdf):
         """Generate comprehensive PDF report with all plots"""
         print("[INFO] Generating PDF report...")
         
-        pdf_path = self.output_dir / 'QC_Report.pdf'
-        doc = SimpleDocTemplate(str(pdf_path), pagesize=letter,
+        doc = SimpleDocTemplate(output_pdf, pagesize=landscape(letter),
                                rightMargin=0.5*inch, leftMargin=0.5*inch,
                                topMargin=0.5*inch, bottomMargin=0.5*inch)
         
@@ -780,164 +809,148 @@ class InterOpQCPlotter:
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=24,
-            textColor=colors.HexColor('#1f77b4'),
+            textColor=colors.HexColor('#0072B2'),
             spaceAfter=30,
-            alignment=TA_CENTER
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
         )
         
         heading_style = ParagraphStyle(
             'CustomHeading',
             parent=styles['Heading2'],
-            fontSize=16,
-            textColor=colors.HexColor('#2ca02c'),
+            fontSize=14,
+            textColor=colors.HexColor('#0072B2'),
+            spaceAfter=6,
+            spaceBefore=6,
+            fontName='Helvetica-Bold'
+        )
+        
+        description_style = ParagraphStyle(
+            'Description',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#333333'),
             spaceAfter=12,
-            spaceBefore=12
+            alignment=TA_LEFT,
+            fontName='Helvetica'
         )
         
         # Title page
-        story.append(Spacer(1, 1*inch))
+        story.append(Spacer(1, 1.5*inch))
         story.append(Paragraph("Illumina Sequencing Run", title_style))
         story.append(Paragraph("Quality Control Report", title_style))
-        story.append(Spacer(1, 0.5*inch))
+        story.append(Spacer(1, 0.7*inch))
         
-        # Run information
+        # Run information overview table
         run_info_data = [
             ['Run Folder:', self.run_folder.name],
             ['Analysis Date:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
         ]
         
-        # Add run metrics if available
         try:
             run_info = self.run_metrics.run_info()
+            flowcell_barcode = run_info.flowcell().barcode()
+            total_cycles = run_info.total_cycles()
+            num_reads = run_info.reads().size()
+            
             run_info_data.extend([
-                ['Flowcell ID:', run_info.flowcell().name()],
-                ['Total Cycles:', str(run_info.total_cycles())],
-                ['Number of Reads:', str(run_info.reads().size())],
+                ['Flowcell Barcode:', flowcell_barcode],
+                ['Total Cycles:', str(total_cycles)],
+                ['Number of Reads:', str(num_reads)],
             ])
-        except:
-            pass
+            
+            for i in range(num_reads):
+                read = run_info.reads()[i]
+                read_info = f"{read.total_cycles()} cycles"
+                if read.is_index():
+                    read_info += " (Index)"
+                run_info_data.append([f'Read {i+1}:', read_info])
+        except Exception as e:
+            print(f"[WARN] Could not load full run info: {e}")
         
-        info_table = Table(run_info_data, colWidths=[2*inch, 4*inch])
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is not None and len(tile_df) > 0:
+                total_clusters = tile_df['Cluster Count'].sum()
+                clusters_pf = tile_df['Cluster Count PF'].sum()
+                
+                run_info_data.append(['Total Clusters:', f'{total_clusters:.0f}'])
+                run_info_data.append(['Clusters Passing Filter:', f'{clusters_pf:.0f}'])
+                
+                if total_clusters > 0:
+                    pf_pct = (clusters_pf / total_clusters * 100)
+                    run_info_data.append(['% Clusters Passing Filter:', f'{pf_pct:.1f}%'])
+        except Exception as e:
+            print(f"[WARN] Could not add cluster info: {e}")
+        
+        info_table = Table(run_info_data, colWidths=[2.5*inch, 5*inch])
         info_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
             ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Courier'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
         
-        #story.append(info_table)
+        story.append(info_table)
         story.append(PageBreak())
         
-        # Add summary statistics if available
-        if self.summary_df is not None and len(self.summary_df) > 0:
-            #story.append(Paragraph("Summary Statistics", heading_style))
-            story.append(Spacer(1, 0.2*inch))
-            
-            # Convert summary dataframe to table
-            summary_data = [self.summary_df.columns.tolist()] + self.summary_df.values.tolist()
-            
-            # Limit columns if too many
-            if len(summary_data[0]) > 6:
-                # Select most important columns
-                important_cols = ['Lane', 'Yield', 'Projected Yield', '% >= Q30', 'Error Rate']
-                available_cols = [col for col in important_cols if col in self.summary_df.columns]
-                if available_cols:
-                    summary_df_subset = self.summary_df[available_cols]
-                    summary_data = [summary_df_subset.columns.tolist()] + summary_df_subset.values.tolist()
-            
-            # Format data
-            for i in range(len(summary_data)):
-                for j in range(len(summary_data[i])):
-                    val = summary_data[i][j]
-                    if isinstance(val, float):
-                        summary_data[i][j] = f'{val:.2f}'
-                    else:
-                        summary_data[i][j] = str(val)
-            
-            col_width = 6.5*inch / len(summary_data[0])
-            summary_table = Table(summary_data, colWidths=[col_width] * len(summary_data[0]))
-            summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
-            
-            #story.append(summary_table)
-            #story.append(PageBreak())
-        
-        # Add all plots
-        if self.plot_files:
-            story.append(Paragraph("Quality Control Plots", heading_style))
-            story.append(Spacer(1, 0.2*inch))
-            
-            for plot_title, plot_path in self.plot_files:
-                if os.path.exists(plot_path):
-                    # Add plot title
-                    story.append(Paragraph(plot_title, styles['Heading3']))
-                    story.append(Spacer(1, 0.1*inch))
-                    
-                    # Add image - scale to fit page width
-                    img = Image(plot_path, width=6.5*inch, height=4*inch)
-                    story.append(img)
-                    story.append(Spacer(1, 0.3*inch))
-                    
-                    # Page break after every 2 plots
-                    if self.plot_files.index((plot_title, plot_path)) % 2 == 1:
-                        story.append(PageBreak())
+        # Add all plots - one per page
+        for plot_title, plot_description, plot_data in self.plot_images:
+            story.append(Paragraph(plot_title, heading_style))
+            story.append(Paragraph(plot_description, description_style))
+            img = Image(BytesIO(plot_data), width=9*inch, height=5.4*inch, kind='proportional')
+            story.append(img)
+            story.append(PageBreak())
         
         # Build PDF
         doc.build(story)
-        print(f"  ✓ Created QC_Report.pdf")
-        print(f"\n[INFO] PDF report saved to: {pdf_path}")
+        print(f"  ✓ Created PDF report: {output_pdf}")
     
-    def generate_all_plots(self):
-        """Generate all available QC plots"""
+    def generate_all_plots(self, output_pdf):
+        """Generate all available QC plots and create PDF"""
         print("\n" + "=" * 80)
         print("GENERATING QC PLOTS")
         print("=" * 80 + "\n")
         
+        self.plot_summary_page()
+        self.plot_cluster_distribution()
+        self.plot_overall_cluster_pie()
+    #    self.plot_lane_balance()
+        self.plot_percent_pf_by_lane()
+        self.plot_cluster_density_heatmap()
         self.plot_qscore_by_cycle()
-        self.plot_density_metrics()
-        self.plot_intensity_metrics()
-        self.plot_base_composition()
+        self.plot_intensity_distribution()
+        self.plot_phasing_prephasing()
         self.plot_fwhm_metrics()
-        self.plot_occupancy()
-        self.plot_phasing_metrics()
-        self.plot_passfilter_distribution()
-        self.plot_tile_heatmap()
-        self.generate_summary_report()
-        self.export_csv_tables()
-        self.generate_pdf_report()
+        self.plot_base_composition()
+        self.plot_q40_metrics()
+        self.generate_pdf_report(output_pdf)
         
         print("\n" + "=" * 80)
         print("QC PLOT GENERATION COMPLETE")
         print("=" * 80)
-        print(f"\nOutput directory: {self.output_dir}")
-        print(f"\nGenerated files:")
-        for f in sorted(self.output_dir.glob('*')):
-            print(f"  - {f.name}")
+        print(f"\nPDF report saved to: {output_pdf}")
+        print(f"Total plots generated: {len(self.plot_images)}")
         print()
 
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python interop_qc_plots.py <run_folder> <output_dir>")
+        print("Usage: python interop_more.py <run_folder> <output_pdf>")
         print("\nExample:")
-        print("  python interop_qc_plots.py /data/210101_A00000_0001_AHXXXX ./qc_plots")
+        print("  python interop_more.py /data/210101_A00000_0001_AHXXXX ./QC_Report.pdf")
         sys.exit(1)
     
     run_folder = sys.argv[1]
-    output_dir = sys.argv[2]
+    output_pdf = sys.argv[2]
     
-    # Validate run folder
     if not os.path.exists(run_folder):
         print(f"[ERROR] Run folder does not exist: {run_folder}")
         sys.exit(1)
@@ -946,9 +959,13 @@ def main():
         print(f"[ERROR] InterOp folder not found in: {run_folder}")
         sys.exit(1)
     
+    output_dir = os.path.dirname(output_pdf)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
     try:
-        plotter = InterOpQCPlotter(run_folder, output_dir)
-        plotter.generate_all_plots()
+        plotter = InterOpQCPlotter(run_folder)
+        plotter.generate_all_plots(output_pdf)
     except Exception as e:
         print(f"\n[ERROR] Failed to generate plots: {e}")
         import traceback

@@ -14,6 +14,7 @@ dependencies:
   - seaborn
   - matplotlib
   - numpy
-  - pip
-  - pip: # Include pip dependencies last
-      - interop
+  - pypdf2
+#  - pip
+#  - pip: # Include pip dependencies last
+#      - interop
