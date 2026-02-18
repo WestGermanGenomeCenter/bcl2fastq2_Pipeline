@@ -15,6 +15,6 @@ dependencies:
   - matplotlib
   - numpy
   - pypdf2
-#  - pip
-#  - pip: # Include pip dependencies last
-#      - interop
+  - pip # if interop fails for you: disable  / delete the lines 18-20 on the hpc in this env.yaml, then let the rule fail once, then activate the env, then install interop via pip inside that env manually.
+  - pip: 
+      - interop 

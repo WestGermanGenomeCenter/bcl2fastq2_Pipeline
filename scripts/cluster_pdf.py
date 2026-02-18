@@ -952,8 +952,8 @@ def generate_comprehensive_report(run_folder, output_pdf):
             # Page 3: % Occupied vs % Pass Filter (by Lane)
             try:
                 print("  → Page 3: % Occupied vs % Pass Filter (by Lane)")
-                plot_percent_occupied_vs_pf(pdf, imaging_df)
-                page_count += 1
+             #   plot_percent_occupied_vs_pf(pdf, imaging_df)
+             #   page_count += 1
             except Exception as e:
                 print(f"  ⚠ Skipped % Occupied vs PF (by Lane): {e}", file=sys.stderr)
             
@@ -1008,8 +1008,8 @@ def generate_comprehensive_report(run_folder, output_pdf):
             # Page 10: Phasing Offset/Slope
             try:
                 print("  → Page 10: Phasing Offset/Slope")
-                plot_phasing_offset_slope(pdf, imaging_df)
-                page_count += 1
+            #    plot_phasing_offset_slope(pdf, imaging_df)
+            #    page_count += 1
             except Exception as e:
                 print(f"  ⚠ Skipped phasing offset/slope: {e}", file=sys.stderr)
             

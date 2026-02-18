@@ -91,8 +91,9 @@ def getOutput():
     if config["biobloom"]["biobloom_active"]:
         all.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
 
-    if config["diamond"]["diamond_active"]:
-        all.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+    if config["sourmash"]["sourmash_active"]:
+        all.extend(expand("{out}/sourmash/{file}_sourmash.csv",out=outputfolder,file=sample_names))
+#             csv_file=outputfolder+"/sourmash/{file}_sourmash.csv",
 
     if config["sortmerna"]["sortmerna_active"]:
         all.extend(expand("{out}/sortmerna/{file}_non-ribosomal_rna.fq.gz",out=outputfolder,file=sample_names))
@@ -133,8 +134,8 @@ def getFastQCs(wildcards):
         fastQCs.extend(expand("{out}/jellyfish/{file}_trimmed_jf.hist",out=outputfolder,file=sample_names))
     if config["biobloom"]["biobloom_active"]:
         fastQCs.extend(expand("{out}/biobloom/biobloom_results_{file}_summary.tsv",out=outputfolder,file=sample_names))
-    if config["diamond"]["diamond_active"]:
-        fastQCs.extend(expand("{out}/diamond/{file}/diamond.log",out=outputfolder,file=sample_names))
+    if config["sourmash"]["sourmash_active"]:
+        fastQCs.extend(expand("{out}/sourmash/{file}_sourmash.csv",out=outputfolder,file=sample_names))
     if config["mapping"]["qualimap_on"]:
         fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=getSample_names_post_mapping())) # final qualimap output
     if config["sortmerna"]["sortmerna_active"]:
@@ -651,36 +652,39 @@ if isSingleEnd() == True:
             rm -rf {params.workdir} 2> /dev/null # the cleanup step should not cause an error
             """
 
-    rule diamond:
-        input:
-            outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
-        output:
-            log_file=outputfolder+"/diamond/{file}/diamond.log",
+rule sourmash:
+    input:
+        outputfolder+"/untrimmed_fastq/{file}.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"
+        #outputfolder+"/umi_extract/{file}.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{file}_trimmed.fastq.gz"   # only possible if cutadapt and/or umi_tools are active
+    output:
+        csv_file=outputfolder+"/sourmash/{file}_sourmash.csv",
+    params:
+        out_folder=outputfolder+"/sourmash/",
+        out_sample_folder=outputfolder+"/sourmash/{file}", # run diamond here
+        ref_euk=config["sourmash"]["sourmash_eukaryote_ref"],
+        ref_bac=config["sourmash"]["sourmash_microbial_ref"],
+        sketch_out=temp(outputfolder+"/sourmash/{file}_sketch.sig.gz"),
+        sample_name="{file}",
+    log:
+        outputfolder+"/logs/sourmash/{file}.sourmash.log"
+    conda:
+        p+"/envs/sourmash.yaml"
+    message: "sourmash: classifying Sequence data..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 2,
+        time_hrs=lambda wildcards, attempt: attempt * 2,
+        mem_gb=lambda wildcards, attempt: attempt * 48
+    shell:
+        """
 
-        params:
-            out_folder=outputfolder+"/diamond/",
-            out_sample_folder=outputfolder+"/diamond/{file}", # run diamond here
-            diamond_ref_file=config["diamond"]["diamond_ref_file"],
-            textfile=outputfolder+"/diamond/{file}/{file}_diamond_output.txt",
-            diamond_summary_file=outputfolder+"/diamond/{file}_diamond_output_summary.txt",
-        log:
-            outputfolder+"/diamond/{file}.diamond.log"
-        conda:
-            p+"/envs/diamond.yaml"
-        message: "diamond: classifying Sequence data with peptide similarity..."
-        resources:
-            threads=lambda wildcards, attempt: attempt * 12,
-            time_hrs=lambda wildcards, attempt: attempt * 2,
-            mem_gb=lambda wildcards, attempt: attempt * 24
-
-        shell:
-            """
-            mkdir -p {params.out_folder} 2>{log}
-            mkdir -p {params.out_sample_folder}
-            cd {params.out_sample_folder}
-            diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile} --query {input} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {log} 2>&1
-            cat {params.textfile} |sort |uniq -c | sort -n | tac >{params.diamond_summary_file}
-            """
+        mkdir -p {params.out_folder} 2>{log}
+        rm -rf {params.out_sample_folder} >> {log} 2>&1
+        rm -rf {output.csv_file} >> {log} 2>&1 # just to be sure, delete potentially old in-between files
+        rm -rf {params.sketch_out} >> {log} 2>&1
+        mkdir -p {params.out_sample_folder} >> {log} 2>&1
+        sourmash sketch dna --name {params.sample_name} -o {params.sketch_out} {input} -p k=51,scaled=10000 >> {log} 2>&1
+        sourmash gather {params.sketch_out} {params.ref_euk} {params.ref_bac} -o {output}  || true >> {log} 2>&1
+        """
 
 
 if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default

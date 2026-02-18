@@ -353,6 +353,9 @@ rule interop_plots:
         cluster_pdf_script=p+"/scripts/cluster_pdf.py",
         cluster_pdf=config["demux"]["OutputFolder"]+"/interop_plots/RunReport.pdf",
         cluster_file=outputfolder+"/interop_plots/Sequencing_report.pdf",
+        demux_py=p+"/scripts/demux_report.py",
+        demux_pdf=outputfolder+"/interop_plots/Demux_report.pdf",
+        reports_dir=outputfolder+"/Reports",
         raw_files_place=getParentDir        
 
     conda:
@@ -368,8 +371,9 @@ rule interop_plots:
         # add the get_cluster_numbers.py script, redirect errors to /dev/null
         # alternatively to the script, one can also interop_plot_q_score path/to/runfolder | gnuplot. the interop package is already in anaconda: illumina-interop
         # interop via pip wont install on the hpc, so conda install must be enough for now. supressing all errors because of this - should work on any modern machine
-        python {params.script} {params.raw_files_place} {params.cluster_file}  >> {log} 2>&1 
+        python {params.script} {params.raw_files_place} {params.cluster_file}  >> /dev/null 2>&1
         python {params.cluster_pdf_script} {params.raw_files_place} {params.cluster_pdf} >> {log} 2>&1
+        python {params.demux_py} -i {params.reports_dir} -o {params.demux_pdf} >> {log} 2>&1
         touch {output}
         """
 

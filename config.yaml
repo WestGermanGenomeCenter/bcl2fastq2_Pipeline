@@ -112,11 +112,11 @@ biobloom:
   biobloom_filter_dir: "/gpfs/project/projects/bmfz_gtl/databases/biobloom/" # / at the end needed 
   biobloom_filters: '"Acetobacter_tropicalis.bf Amborella_trichopoda.bf Aquilegia_eximia.bf arabidopsis_tair10.bf Aspergillus_flavus.bf bac_subtilis_168.bf c_elegans.bf coffee.bf cottus_rhenaus.bf crayfish_gca.bf eColi_mg16.bf elephant_seal.bf fruitfly.bf fungus.bf human_hs1.bf Leishmania_major.bf lichen.bf mite.bf moss_Phypa_V3.bf mouse_mm39.bf mycoplasma_hyopneumoniae.bf Plasmodium_falciparum.bf rat_rn7.bf soybean_GlyMax.bf Toxoplasma_gondii.bf wheat.bf yeast_R64.bf Yersinia_kristensenii.bf zebrafish.bf "'
 
-# diamond is much more efficient then blast, but here works only on protein sequences. # much faster than blast, kraken or biobloom, needs cutadapt to be active
-diamond:
-  diamond_active: False  #
-  diamond_ref_file: "/gpfs/project/projects/bmfz_gtl/databases/diamond/swissprot_protein_db.dmnd"
-
+# sourmash is a k-mer based tool that aims to be better than kraken, here used with eukaryote-only and microbial db
+sourmash:
+  sourmash_active: False  #
+  sourmash_eukaryote_ref: "/gpfs/project/projects/bmfz_gtl/databases/sourmash/ncbi-euks-all-2025.01-k51.dna.rocksdb"
+  sourmash_microbial_ref: "/gpfs/project/projects/bmfz_gtl/databases/sourmash/gtdb-rs226-k51.dna.rocksdb" 
 
 # sortmerna counts rRNA from input files, splitting the .fastq in the process.  # needs cutadapt and/ or umi_tools to be active
 sortmerna:

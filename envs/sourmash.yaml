@@ -1,4 +1,4 @@
-name: diamond
+name: sourmash
 channels:
   - nodefaults
   - http://conda.repo.test.hhu.de/conda-forge
@@ -6,4 +6,5 @@ channels:
   - http://conda.repo.test.hhu.de/main
         
 dependencies:
-  - diamond=2.1.18
+  - sourmash=4.9.4
+  - sourmash_plugin_branchwater
