@@ -671,9 +671,9 @@ rule sourmash:
         p+"/envs/sourmash.yaml"
     message: "sourmash: classifying Sequence data..."
     resources:
-        threads=lambda wildcards, attempt: attempt * 2,
+        threads=1,
         time_hrs=lambda wildcards, attempt: attempt * 2,
-        mem_gb=lambda wildcards, attempt: attempt * 48
+        mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
         """
 
@@ -684,6 +684,7 @@ rule sourmash:
         mkdir -p {params.out_sample_folder} >> {log} 2>&1
         sourmash sketch dna --name {params.sample_name} -o {params.sketch_out} {input} -p k=51,scaled=10000 >> {log} 2>&1
         sourmash gather {params.sketch_out} {params.ref_euk} {params.ref_bac} -o {output}  || true >> {log} 2>&1
+        rm -rf {params.out_sample_folder} >> {log} 2>&1
         """
 
 
@@ -849,7 +850,7 @@ if config["kraken2"]["kraken2_active"]:
         resources:
             threads=lambda wildcards, attempt: attempt * 2,
             time_hrs=lambda wildcards, attempt: attempt * 1,
-            mem_gb=lambda wildcards, attempt: 172 + (attempt * 12)
+            mem_gb=lambda wildcards, attempt: 178 + (attempt * 12)
 
         conda:
             p+"/envs/kraken2.yaml"

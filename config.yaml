@@ -106,11 +106,11 @@ kaiju:
 jellyfish:
   jellyfish_active: False #
 
-# biobloom is for taxonomic classification of reads based on k-mers. needs one new biobloom filter for each species screened for. # use only if kraken, diamond and blast are non-overlapping nor conclusive
+# biobloom is for taxonomic classification of reads based on k-mers. needs one new biobloom filter for each species screened for. feel free to add / remove filters from the same directory!
 biobloom:
   biobloom_active: False
   biobloom_filter_dir: "/gpfs/project/projects/bmfz_gtl/databases/biobloom/" # / at the end needed 
-  biobloom_filters: '"Acetobacter_tropicalis.bf Amborella_trichopoda.bf Aquilegia_eximia.bf arabidopsis_tair10.bf Aspergillus_flavus.bf bac_subtilis_168.bf c_elegans.bf coffee.bf cottus_rhenaus.bf crayfish_gca.bf eColi_mg16.bf elephant_seal.bf fruitfly.bf fungus.bf human_hs1.bf Leishmania_major.bf lichen.bf mite.bf moss_Phypa_V3.bf mouse_mm39.bf mycoplasma_hyopneumoniae.bf Plasmodium_falciparum.bf rat_rn7.bf soybean_GlyMax.bf Toxoplasma_gondii.bf wheat.bf yeast_R64.bf Yersinia_kristensenii.bf zebrafish.bf "'
+  biobloom_filters: '"human_hs1.bf mouse_mm39.bf mycoplasma_hyopneumoniae.bf Aspergillus_flavus.bf Toxoplasma_gondii.bf Yersinia_kristensenii.bf eColi_mg16.bf ribosomal_rna.bf lentivirus_hiv.bf "'
 
 # sourmash is a k-mer based tool that aims to be better than kraken, here used with eukaryote-only and microbial db
 sourmash:
@@ -122,7 +122,6 @@ sourmash:
 sortmerna:
   sortmerna_active: False
   sortmerna_reference_list: '  --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5.8s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/rfam-5s-database-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-23s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-28s-id98.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-euk-18s-id95.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-bac-16s-id90.fasta --ref /gpfs/project/projects/bmfz_gtl/databases/sortmerna/silva-arc-16s-id95.fasta'
-
 
 # crypt4gh encryption of umi_extract/cutadapt output files. needs both files to be present on the same filesystem as files # use only for human data, only transfer the files in the /encrypted_fastqs/ folder 
 crypt4gh:
