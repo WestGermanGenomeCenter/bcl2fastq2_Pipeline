@@ -213,6 +213,8 @@ optional downstream RNA-Seq analysis. Built for high-throughput environments, it
 - **Data transfer**: Automated output delivery via SCP
 - **Reproducibility**: Version tracking, checksums, and complete audit trails
 
+### Automation
+- **cronjob**: setup a cronjob for auto-execution of a pipeline
 ---
 
 ## Pipeline Architecture
@@ -264,6 +266,7 @@ Performs trimming, contamination checks, mapping, and transcript quantification.
 - **Storage**: Large disk space for BCL files, FASTQ outputs, and intermediate files
 - **Memory**: Varies by sample size; STAR indexing can require 30+ GB RAM
 - **Compute**: Multi-core system or HPC cluster recommended
+
 
 ---
 
@@ -676,6 +679,41 @@ snakemake --snakefile Snakefile --unlock
 ```
 
 ---
+
+## Automation of start
+The pipeline can be made to autostart, if:
+  - there is access to a crontab
+  - the pc /vm  where the crontab is active has direct access to the illumina outputfolder
+
+To automate the pipeline:
+  - edit *both* files in the dir /autostart : paths, usernames and job parameters need to fit to your environment
+  - add a cronjob executing the autostart_cronjob_bclconvert.sh
+
+#### How the script works:
+It scans a folder of folders (The folder where all illumina runfolders are) for runs (folders)that:
+  - have a SampleSheet.*.csv in a folder. So SampleSheet.csv and SampleSheet_test1231.csv both work. The folder can contain multiple SampleSheets, only the one in the config.yaml gets used.
+  - have a config.yaml in **the same folder**. This needs to be a copy of the config.yaml from the root of this pipeline. The config.yaml gets copied from the runfolder to the root of this pipeline. In this config.yaml the SampleSheet and the outputfolder need to be configured. This will be the config.yaml that gets used during pipeline execution, so enable/ disable / set all things in the config.yaml according to your needs
+  - have NOT a flag file  (.pipeline_launched) in **the same folder** that gets put there on the first automatic execution of the pipeline. Do a 'ls -alth' to find the flag
+
+The script also only starts the pipeline if a job of the same pipeline (its called "demx_pipe_auto") is not already / still running. it checks with qstat for the name of the pipeline job that it would execute.
+
+You can also run the starter script manually to check if your setup is ok: 'bash autostart_cronjob_bclconvert.sh'
+
+Then the scripts submits the jobscript in the same folder: autostart/execute_pipeline.sh
+
+To summarize:
+- edit the bash scripts according to your setup (folders, username)
+- add to your crontab
+
+To make a pipeline auto-run:
+- a runfolder needs to have: SampleSheet.csv, config.yaml, no flagfile (that gets put there on the first automatic execution)
+- the config.yaml should have your desired pipeline parameters, as these are the settings the pipeline will be executed with
+
+Pitfalls:
+- the pipeline will be executed if you analyzed the data already with the pipeline manually before - as long as the previously stated files are as expected - because the manual pipeline execution does not create the flagfile.
+- the pipeline does not care if the copy is complete or not. The config.yaml or the SampleSheet should thus be only copied over once the run and the tranfer is complete. 
+- if you use multiple machines, you need to setup multiple instances of the cronjob. For this the fastest path is to copy the autostart_cronjob_bclconvert.sh and edit the WATCH_DIR. Then add another cronjob with the copied file that watches the other dir. 
+
 
 ## Pipeline Stages
 
