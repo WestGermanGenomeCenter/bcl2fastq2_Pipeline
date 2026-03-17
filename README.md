@@ -691,11 +691,11 @@ To automate the pipeline:
 
 #### How the script works:
 It scans a folder of folders (The folder where all illumina runfolders are) for runs (folders)that:
-  - have a SampleSheet.*.csv in a folder. So SampleSheet.csv and SampleSheet_test1231.csv both work. The folder can contain multiple SampleSheets, only the one in the config.yaml gets used.
-  - have a config.yaml in **the same folder**. This needs to be a copy of the config.yaml from the root of this pipeline. The config.yaml gets copied from the runfolder to the root of this pipeline. In this config.yaml the SampleSheet and the outputfolder need to be configured. This will be the config.yaml that gets used during pipeline execution, so enable/ disable / set all things in the config.yaml according to your needs
+  - have a CopyComplete.txt in a folder. (The folder can also contain multiple SampleSheets, only the one in the config.yaml gets used).
+  - have a config.yaml in **the same folder**. This needs to be a copy of the config.yaml from the root of this pipeline. aldkf234_config.yaml also works, as does config_oiquzreoizewr123213.yaml. The config.yaml gets copied from the runfolder to the root of this pipeline. In this config.yaml the SampleSheet and the outputfolder need to be configured. This will be the config.yaml that gets used during pipeline execution, so enable/ disable / set all things in the config.yaml according to your needs
   - have NOT a flag file  (.pipeline_launched) in **the same folder** that gets put there on the first automatic execution of the pipeline. Do a 'ls -alth' to find the flag
-
-The script also only starts the pipeline if a job of the same pipeline (its called "demx_pipe_auto") is not already / still running. it checks with qstat for the name of the pipeline job that it would execute.
+  - as indirect requirement: the pipeline needs the samplesheet in the illumina runfolder that it should demultiplex, of course only if skip_demux is not active
+The script also only starts the pipeline if a job of the same pipeline autostart (its called "demx_pipe_auto") is not already / still running. it checks with qstat for the name of the pipeline job that it would execute.
 
 You can also run the starter script manually to check if your setup is ok: 'bash autostart_cronjob_bclconvert.sh'
 
@@ -706,12 +706,11 @@ To summarize:
 - add to your crontab
 
 To make a pipeline auto-run:
-- a runfolder needs to have: SampleSheet.csv, config.yaml, no flagfile (that gets put there on the first automatic execution)
+- a runfolder needs to have: CopyComplete.txt, config.yaml, no flagfile (that gets put there on the first automatic execution)
 - the config.yaml should have your desired pipeline parameters, as these are the settings the pipeline will be executed with
 
 Pitfalls:
-- the pipeline will be executed if you analyzed the data already with the pipeline manually before - as long as the previously stated files are as expected - because the manual pipeline execution does not create the flagfile.
-- the pipeline does not care if the copy is complete or not. The config.yaml or the SampleSheet should thus be only copied over once the run and the tranfer is complete. 
+- the pipeline will be executed if you analyzed the data already with the pipeline manually before - as long as the previously stated files are as expected - because the manual pipeline execution does not create the flagfile. 
 - if you use multiple machines, you need to setup multiple instances of the cronjob. For this the fastest path is to copy the autostart_cronjob_bclconvert.sh and edit the WATCH_DIR. Then add another cronjob with the copied file that watches the other dir. 
 
 
@@ -972,18 +971,15 @@ umi_pattern: "NNNNNNNN"  # 8 N's for 8bp UMI
 
 ### Performance Optimization
 
-#### Speed Up Demultiplexing
-```yaml
-# Use more threads (adjust based on available cores)
-bcl2fastq_threads: 16
-bcl2fastq_write_threads: 4
-bcl2fastq_read_threads: 4
-```
+
+
+
+
+
 
 #### Reduce Disk I/O
 ```yaml
-# Use local scratch for temp files
-temp_dir: "/local/scratch"
+
 
 # Disable unnecessary QC
 run_blast: false  # BLAST is very slow
@@ -1070,13 +1066,13 @@ A: bcl2fastq2/bclconvert handle variable lengths automatically. Make sure your S
 A: Rule of thumb: 3-4x the size of BCL files (for BCL + FASTQ + intermediate files). Use `du -sh RunFolder/` to estimate.
 
 **Q: Can I run multiple pipelines simultaneously?**  
-A: Yes, but ensure each uses a different `OutputFolder` and avoid cluster job limits.
+A: Yes, copy/paste the complete pipeline to a different second folder just to be sure. Also ensure each uses a different `OutputFolder` and avoid cluster job limits.
 
 **Q: How do I cite this pipeline?**  
-A: Include the GitHub repository URL and the specific commit hash (found in `pipeline_version.txt` in outputs).
+A: Include the GitHub repository URL and the specific commit hash.
 
 **Q: Is there a Docker/Singularity container?**  
-A: Not yet, but conda environments make installation straightforward on most systems.
+A: No, but conda environments make installation straightforward on most systems.
 
 **Q: What about 10x Genomics data?**  
 A: This pipeline is for bulk RNA-Seq. For 10x single-cell data, use Cell Ranger instead.
@@ -1095,7 +1091,6 @@ Contributions are welcome! Please:
 
 **Guidelines:**
 - Follow existing code style
-- Add tests for new features
 - Update documentation
 - Use descriptive commit messages
 
@@ -1112,7 +1107,7 @@ Contributions are welcome! Please:
 If you use this pipeline in your research, please cite:
 
 ```
-West German Genome Center bcl2fastq2_Pipeline (2024)
+West German Genome Center bcl2fastq2_Pipeline (2026)
 https://github.com/WestGermanGenomeCenter/bcl2fastq2_Pipeline
 ```
 

@@ -203,7 +203,6 @@ if not config["skip_demux"]["skip_demux_active"]:
             cp {input[0]} {params.output_dir} >> {log} 2>&1
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
             mv {params.undetermined} {params.output_dir} 2>/dev/null
-            chmod 775 -R {params.output_dir} >> {log} 2>&1
             mv {params.Logs_path} {params.bcl_log_path} >> {log} 2>&1
             """
 

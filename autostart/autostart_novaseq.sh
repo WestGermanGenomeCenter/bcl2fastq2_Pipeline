@@ -5,7 +5,7 @@
 #30 2 * * * cd /gpfs/project/projects/bmfz_gtl/software/software_tests/update_2026/autostart/ && bash autostart_cronjob_bclconvert.sh ./logfile_cronjob_pipeline.log 2>&1
 #
 #
-WATCH_DIR="/gpfs/project/projects/bmfz_gtl/devices/illumina/nextseq2000"
+WATCH_DIR="/gpfs/project/projects/bmfz_gtl/devices/illumina/novaseqx"
 PIPELINE="/gpfs/project/projects/bmfz_gtl/software/software_tests/update_2026/runPipeline.sh"
 SNAKEMAKE_DIR="/gpfs/project/projects/bmfz_gtl/software/software_tests/update_2026"
 LOCKFILE=".pipeline_launched"

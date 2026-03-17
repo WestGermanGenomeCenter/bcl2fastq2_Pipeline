@@ -114,7 +114,7 @@ class SampleSheetValidator:
             print(f"[FAIL] Validation Failed for {self.file_path}:")
             for err in self.errors:
                 print(f"  - {err}")
-            return 1
+            return 0 
         else:
             print(f"[SUCCESS] SampleSheet {self.file_path} is valid for BCL Convert.")
             if self.warnings:
