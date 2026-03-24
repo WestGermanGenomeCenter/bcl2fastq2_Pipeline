@@ -1,0 +1,12 @@
+name: pca_plot
+channels:
+  - nodefaults
+  - http://conda.repo.test.hhu.de/conda-forge
+  - http://conda.repo.test.hhu.de/bioconda
+  - http://conda.repo.test.hhu.de/main
+
+dependencies:
+  - r-base
+  - r-ggplot2
+  - r-ggrepel
+  - r-uwot

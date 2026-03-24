@@ -41,6 +41,9 @@ def getOutput():
 
     if config["mapping"]["mapping_active"]:
         all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
+        #n         outputfolder+"/counts/pca.png"
+        all.extend(expand("{out}/counts/pca.png",out=outputfolder))
+
         all.extend(expand("{out}/star/star_logs_summarized.csv",out=outputfolder))
 
         all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))
@@ -175,7 +178,9 @@ rule all:
 
 checkpoint check_fastq_files:
     input:
-        expand("{out}/untrimmed_fastq/{file}.fastq.gz",file=sample_names,out=outputfolder)
+        checksum_file=config["demux"]["OutputFolder"]+"/untrimmed_fastq/"+projectNum+"_sha256sums_fastqfiles.sha256"
+
+        #expand("{out}/untrimmed_fastq/{file}.fastq.gz",file=sample_names,out=outputfolder)
         #outputfolder+"/untrimmed_fastq/{file}.fastq.gz"
     output:
         outputfolder+"/inputfiles_checkpoint_completed.out"
@@ -462,7 +467,7 @@ rule stringtie_merge:
         stringtie_merged=outputfolder+"/stringtie/transcripts_all_merged.gtf" # add this to needed outs if stringtie is active
     shell:# stringtie -p 32 bam  -g ../mm39.ncbiRefSeq.gtf -o stringtie_out_2
         """
-        stringtie --merge {input.all_gtfs} -G {params.gtf}  {params.stranded_param} -o {output.stringtie_merged} -p {resources.threads} >> {log} 2>&1
+        stringtie --merge {input.all_gtfs} -G {params.gtf}  -o {output.stringtie_merged} -p {resources.threads} >> {log} 2>&1
         chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
 
@@ -488,7 +493,7 @@ rule stringtie_estimate:
         stringtie_out_levels=outputfolder+"/stringtie/transcript_abundances_{file}.gtf"
     shell:# stringtie -p 32 bam  -g ../mm39.ncbiRefSeq.gtf -o stringtie_out_2
         """
-        stringtie -e -B -G {input.stringtie_merged} {params.stranded_param} {input.bams} -o {output.stringtie_out_levels} -p {resources.threads} >> {log} 2>&1
+        stringtie {input.bams} -e -B -G {input.stringtie_merged}  -o {output.stringtie_out_levels} -p {resources.threads} >> {log} 2>&1
         chmod -f  ago+rwx -R {output} >> {log} 2>&1
         """
 
@@ -803,6 +808,29 @@ rule featurecounts:
         mkdir -p {params.outdir}
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
         chmod -f  ago+rwx -R {params.outdir}
+        """
+
+rule pca_plot:
+    input:
+        counts_file=outputfolder+"/counts/all.tsv"
+    params:
+        dir=outputfolder+"/counts/",
+        script=p+"/scripts/pca.R"
+    conda:
+        p+"/envs/pca_plot.yaml"
+    log:
+    	outputfolder+"/logs/pca/pca.log",
+    output:
+        outputfolder+"/counts/pca.png"
+    message: "doing a PCA / UMAP with the featurecounts data..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 2,
+        time_hrs=lambda wildcards, attempt: attempt * 1,
+        mem_gb=lambda wildcards, attempt: attempt * 8
+    shell:
+        """
+        Rscript --vanilla --no-warnings {params.script} {input.counts_file} {params.dir} 2>{log}
+        
         """
 
 
