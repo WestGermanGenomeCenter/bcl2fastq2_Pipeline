@@ -791,8 +791,10 @@ rule featurecounts:
         gtf=config["mapping"]["gtf_file"],
         stranded=config["mapping"]["stranded"],
         outdir=outputfolder+"/counts",
+        script=p+"/scripts/heatmap.py",
+        pdf=outputfolder+"/counts/"+projectNum+"_CountsReport.pdf",
     conda:
-        p+"/envs/umi_tools.yaml"
+        p+"/envs/counts.yaml"
     log:
     	outputfolder+"/logs/featurecounts/featurecounts.log",
     output:
@@ -807,6 +809,7 @@ rule featurecounts:
         """
         mkdir -p {params.outdir}
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
+        python {params.script} {output.counts_file} {params.pdf} 2>{log}
         chmod -f  ago+rwx -R {params.outdir}
         """
 
