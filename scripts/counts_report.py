@@ -1,999 +1,1247 @@
 """
-RNA-seq QC Report Generator
-Produces a single PDF with QC and exploratory plots from a featureCounts count matrix.
-Usage: python comprehensive_report_python.py <counts_file> <output_pdf>
+RNA-seq QC Interactive HTML Report
+Usage: python rnaseq_html_report.py <featureCounts_file> <output.html>
+
+Sections (logical flow):
+  1. Summary          — per-sample stats table + quick visual overview
+  2. QC Metrics       — library sizes, gene detection, CPM distributions, outlier Z-scores
+  3. Sample Structure — correlation heatmap, Ward dendrogram, PCA, UMAP
+  4. Gene Analysis    — mean-CV plot, sortable top-genes table, variable-gene heatmap
+  5. Group Estimation — k-means (UMAP), hierarchical cut, consensus clustering
 """
 
-import os
-import sys
-import time
-import warnings
-import traceback
+import os, sys, json, time, datetime, warnings, traceback
 from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.patches import Patch
-import seaborn as sns
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from scipy.cluster.hierarchy import linkage, dendrogram
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
+from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list, fcluster
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import gaussian_kde, median_abs_deviation
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 
 warnings.filterwarnings("ignore")
 
-# ── Palette ───────────────────────────────────────────────────────────────────
-BLUE    = "#2166AC"
-RED     = "#D6604D"
-GREEN   = "#4DAC26"
-GREY    = "#878787"
-BG      = "#F7F7F7"
-DIVIDER = "#CCCCCC"
+# ── 30 visually distinct sample colours (consistent across all plots) ─────────
+PALETTE = [
+    "#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
+    "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf",
+    "#aec7e8","#ffbb78","#98df8a","#ff9896","#c5b0d5",
+    "#c49c94","#f7b6d2","#c7c7c7","#dbdb8d","#9edae5",
+    "#393b79","#637939","#8c6d31","#843c39","#7b4173",
+    "#5254a3","#8ca252","#bd9e39","#ad494a","#a55194",
+]
 
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({
-    "figure.facecolor": "white",
-    "axes.facecolor":   BG,
-    "axes.edgecolor":   DIVIDER,
-    "grid.color":       "white",
-    "grid.linewidth":   1.0,
-    "font.family":      "DejaVu Sans",
-})
+# matplotlib colour codes returned by scipy dendrogram → hex
+_MPL = {"b":"#1f77b4","g":"#2ca02c","r":"#d62728","c":"#17becf",
+        "m":"#9467bd","y":"#bcbd22","k":"#333333","w":"#ffffff"}
+_MPL.update({f"C{i}":c for i,c in enumerate(
+    ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
+     "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"])})
 
-# ── Scaling thresholds ────────────────────────────────────────────────────────
-# Above this many samples, inline scatter labels are replaced by a legend
-LABEL_INLINE_MAX   = 30
-# Above this, tick labels on heatmaps are hidden entirely (too dense)
-HEATMAP_TICK_MAX   = 60
-# Font size floor for x-tick labels on bar charts
-BAR_FONT_MIN       = 5
+def safe_color(c):
+    return _MPL.get(c, c) if not (c.startswith("#") or c.startswith("rgb")) else c
 
+def make_colors(names):
+    """Consistent sample → colour mapping (cycles after 30)."""
+    return {s: PALETTE[i % len(PALETTE)] for i, s in enumerate(names)}
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Shared Plotly layout ───────────────────────────────────────────────────────
+BASE = dict(
+    font=dict(family="Arial, sans-serif", size=12),
+    paper_bgcolor="white",
+    plot_bgcolor="#f9f9f9",
+    margin=dict(l=70, r=40, t=65, b=75),
+    hoverlabel=dict(bgcolor="white", font_size=11),
+)
 
+def base(fig, title="", height=480):
+    fig.update_layout(**BASE, title=dict(text=title, font_size=14), height=height)
+    return fig
+
+def to_json(fig):
+    return pio.to_json(fig, validate=False)
+
+def hline_mean_sd(fig, vals, row=None, col=None):
+    m, s = float(np.mean(vals)), float(np.std(vals))
+    kw = {"row": row, "col": col} if row else {}
+    for v, dash, lbl in [(m,"solid",f"Mean {m:.2f}"),
+                          (m+s,"dash",f"+1 SD {m+s:.2f}"),
+                          (m-s,"dash",f"−1 SD {m-s:.2f}")]:
+        fig.add_hline(y=v, line_dash=dash, line_color="#666", line_width=1.2,
+                      annotation_text=lbl, annotation_font_size=9,
+                      annotation_position="top right", **kw)
+
+# ── Logging ────────────────────────────────────────────────────────────────────
 @contextmanager
-def log_step(name):
+def step(name):
     t = time.time()
-    print(f"  [{time.strftime('%H:%M:%S')}] {name} ...", end=" ", flush=True)
+    print(f"  {name} ...", end=" ", flush=True)
     yield
-    print(f"done ({time.time()-t:.1f}s)")
-
+    print(f"({time.time()-t:.1f}s)")
 
 def warn(msg):
-    print(f"\n  [WARNING] {msg}", flush=True)
+    print(f"\n  [WARNING] {msg}")
 
+# ── Data loading ───────────────────────────────────────────────────────────────
+def load_counts(path):
+    df = pd.read_csv(path, sep="\t", comment="#")
+    raw = df.iloc[:, 6:].to_numpy(dtype=float)    # genes × samples
+    genes = df["Geneid"].astype(str).values
+    names = []
+    for c in df.columns[6:]:
+        n = os.path.basename(str(c))
+        for suf in ("_Aligned.sortedByCoord.out.bam", ".bam",
+                    "_Aligned.out.bam", ".sortedByCoord.out.bam"):
+            n = n.replace(suf, "")
+        names.append(n)
+    return raw, genes, names
 
-def assign_colors(labels):
-    palette = sns.color_palette("tab20", n_colors=max(len(labels), 1))
-    return {s: palette[i % len(palette)] for i, s in enumerate(labels)}
-
-
-def add_page_title(fig, title, subtitle=""):
-    fig.text(0.5, 0.97, title, ha="center", va="top",
-             fontsize=14, fontweight="bold", color="#222222")
-    if subtitle:
-        fig.text(0.5, 0.945, subtitle, ha="center", va="top",
-                 fontsize=9, color=GREY)
-
-
-def add_data_note(ax, note):
-    """Small italic label in bottom-right corner of an axes."""
-    ax.text(1.0, -0.18, note, transform=ax.transAxes,
-            fontsize=7, color=GREY, style="italic", ha="right", va="top")
-
-
-def bar_tick_fontsize(n):
-    """Return a reasonable x-tick font size that scales down with sample count."""
-    return max(BAR_FONT_MIN, min(9, int(9 - (n - 20) * 0.12)))
-
-
-def heatmap_tick_fontsize(n):
-    """Return tick font size for heatmaps; 0 = hide ticks entirely."""
-    if n > HEATMAP_TICK_MAX:
-        return 0
-    return max(4, min(9, int(9 - (n - 20) * 0.10)))
-
-
-def mean_sd_lines(ax, values, orientation="h"):
-    """Draw mean ± 1 SD reference lines."""
-    m  = np.mean(values)
-    sd = np.std(values)
-    if orientation == "h":
-        ax.axhline(m,      color=BLUE, linestyle="-",  linewidth=1.2,
-                   label=f"Mean: {m:.2f}", zorder=4)
-        ax.axhline(m + sd, color=BLUE, linestyle="--", linewidth=0.8,
-                   label=f"+1 SD: {m+sd:.2f}", zorder=4)
-        ax.axhline(m - sd, color=BLUE, linestyle="--", linewidth=0.8,
-                   label=f"-1 SD: {m-sd:.2f}", zorder=4)
-    else:
-        ax.axvline(m,      color=BLUE, linestyle="-",  linewidth=1.2, zorder=4)
-        ax.axvline(m + sd, color=BLUE, linestyle="--", linewidth=0.8, zorder=4)
-        ax.axvline(m - sd, color=BLUE, linestyle="--", linewidth=0.8, zorder=4)
-
-
-def adjust_text_labels(ax, texts):
-    """Iterative repulsion to prevent label overlap in scatter plots."""
-    if len(texts) < 2:
-        return
-    fig = ax.get_figure()
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    MAX_ITER = 60
-    PAD = 2.0
-    for _ in range(MAX_ITER):
-        moved  = False
-        bboxes = [t.get_window_extent(renderer=renderer) for t in texts]
-        for i in range(len(texts)):
-            for j in range(i + 1, len(texts)):
-                bi, bj = bboxes[i], bboxes[j]
-                if (bi.x0 < bj.x1 + PAD and bi.x1 + PAD > bj.x0 and
-                        bi.y0 < bj.y1 + PAD and bi.y1 + PAD > bj.y0):
-                    ox = (bi.x0 + bi.x1) / 2 - (bj.x0 + bj.x1) / 2
-                    oy = (bi.y0 + bi.y1) / 2 - (bj.y0 + bj.y1) / 2
-                    dx = (bi.x1 - bi.x0 + bj.x1 - bj.x0) / 2 + PAD - abs(ox)
-                    dy = (bi.y1 - bi.y0 + bj.y1 - bj.y0) / 2 + PAD - abs(oy)
-                    inv = ax.transData.inverted()
-                    if dy <= dx:
-                        shift = inv.transform((0, dy / 2)) - inv.transform((0, 0))
-                        sign  = 1 if oy >= 0 else -1
-                        xi, yi = texts[i].get_position()
-                        xj, yj = texts[j].get_position()
-                        texts[i].set_position((xi, yi + sign * abs(shift[1])))
-                        texts[j].set_position((xj, yj - sign * abs(shift[1])))
-                    else:
-                        shift = inv.transform((dx / 2, 0)) - inv.transform((0, 0))
-                        sign  = 1 if ox >= 0 else -1
-                        xi, yi = texts[i].get_position()
-                        xj, yj = texts[j].get_position()
-                        texts[i].set_position((xi + sign * abs(shift[0]), yi))
-                        texts[j].set_position((xj - sign * abs(shift[0]), yj))
-                    moved  = True
-                    bboxes = [t.get_window_extent(renderer=renderer) for t in texts]
-        if not moved:
-            break
-
-
-def scatter_with_labels(ax, xd, yd, colnames, sample_colors, s=70):
-    """
-    Scatter plot with sample labels.
-    - n <= LABEL_INLINE_MAX : labels placed next to each point, overlap-adjusted
-    - n >  LABEL_INLINE_MAX : legend box instead (stays readable at any n)
-    """
-    n = len(colnames)
-    # Scale marker size down for large n
-    s_scaled = max(20, s - max(0, n - 20) * 1.5)
-
-    for i, name in enumerate(colnames):
-        ax.scatter(xd[i], yd[i], color=sample_colors[name],
-                   s=s_scaled, zorder=5, edgecolors="white", linewidths=0.5,
-                   label=name if n > LABEL_INLINE_MAX else None)
-
-    if n <= LABEL_INLINE_MAX:
-        y_pad  = (yd.max() - yd.min()) * 0.03 if (yd.max() - yd.min()) > 0 else 0.01
-        # Font size scales with n: 7 at n=5, 5 at n=30
-        fs     = max(4, 7 - int((n - 5) * 0.10))
-        texts  = []
-        for i, name in enumerate(colnames):
-            t = ax.text(xd[i], yd[i] + y_pad, name,
-                        fontsize=fs, ha="center", va="bottom", color="#333333")
-            texts.append(t)
-        adjust_text_labels(ax, texts)
-    else:
-        # Legend — two columns if more than 20 entries
-        ncol = 2 if n > 20 else 1
-        ax.legend(fontsize=6, loc="best", framealpha=0.7,
-                  markerscale=0.8, ncol=ncol,
-                  handlelength=1, borderpad=0.4, labelspacing=0.3)
-
-
-def set_bar_xlabels(ax, colnames, rotation=45):
-    """Set x-tick labels on bar charts with auto-scaled font size."""
-    n  = len(colnames)
-    fs = bar_tick_fontsize(n)
-    ax.set_xticks(range(n))
-    ax.set_xticklabels(colnames, rotation=rotation, ha="right", fontsize=fs)
-
-
-def apply_heatmap_ticks(ax, names_x, names_y=None):
-    """
-    Apply tick labels to a heatmap axes.
-    Hides labels entirely when n > HEATMAP_TICK_MAX.
-    names_y defaults to names_x if not provided.
-    """
-    if names_y is None:
-        names_y = names_x
-    nx = len(names_x)
-    ny = len(names_y)
-    fs_x = heatmap_tick_fontsize(nx)
-    fs_y = heatmap_tick_fontsize(ny)
-
-    ax.set_xticks(range(nx))
-    ax.set_yticks(range(ny))
-    if fs_x > 0:
-        ax.set_xticklabels(names_x, rotation=45, ha="right", fontsize=fs_x)
-    else:
-        ax.set_xticklabels([])
-    if fs_y > 0:
-        ax.set_yticklabels(names_y, fontsize=fs_y)
-    else:
-        ax.set_yticklabels([])
-
-
-def save_fig(pdf, fig):
-    pdf.savefig(fig, bbox_inches="tight", dpi=150)
-    plt.close(fig)
-
+def normalise(raw):
+    lib = raw.sum(axis=0)
+    lib = np.where(lib == 0, 1, lib)
+    cpm = raw / lib[np.newaxis, :] * 1e6
+    keep = (cpm > 1).any(axis=1)
+    if keep.sum() == 0:
+        keep = np.ones(raw.shape[0], dtype=bool)
+    cpm_f = cpm[keep]
+    lcpm = np.log2(cpm_f + 1).T        # samples × genes
+    return lib, cpm, cpm_f, lcpm, keep
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PLOT FUNCTIONS
+# FIGURE BUILDERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def plot_summary_table(pdf, colnames, lib_sizes, n_genes_before, n_genes_after,
-                       warnings_list):
-    """Page 1 — dataset overview table. Splits into multiple pages if n is large."""
-    ROWS_PER_PAGE = 40
-    col_labels = ["Sample", "Library Size", "Genes (all counts)",
-                  "Genes (CPM > 1 filtered)", "Kept %"]
+# ── Section 1: Summary ────────────────────────────────────────────────────────
 
-    all_rows = []
-    for i, s in enumerate(colnames):
-        all_rows.append([
-            s,
-            f"{lib_sizes[i]:,.0f}",
-            f"{n_genes_before[i]:,}",
-            f"{n_genes_after[i]:,}",
-            f"{n_genes_after[i] / max(n_genes_before[i], 1) * 100:.1f}%",
-        ])
-
-    chunks = [all_rows[i:i + ROWS_PER_PAGE]
-              for i in range(0, len(all_rows), ROWS_PER_PAGE)]
-
-    for page_idx, rows in enumerate(chunks):
-        fig_h = max(4, len(rows) * 0.30 + 2.5)
-        fig, ax = plt.subplots(figsize=(11, fig_h))
-        ax.axis("off")
-        suffix = f" (page {page_idx+1}/{len(chunks)})" if len(chunks) > 1 else ""
-        add_page_title(fig, f"RNA-seq QC Report — Dataset Summary{suffix}")
-
-        table = ax.table(cellText=rows, colLabels=col_labels,
-                         loc="center", cellLoc="center")
-        table.auto_set_font_size(False)
-        fs = max(6, 9 - max(0, len(rows) - 20) // 5)
-        table.set_fontsize(fs)
-        table.scale(1, max(1.2, 1.6 - len(rows) * 0.01))
-
-        for (r, c), cell in table.get_celld().items():
-            if r == 0:
-                cell.set_facecolor(BLUE)
-                cell.set_text_props(color="white", fontweight="bold")
-            elif r % 2 == 0:
-                cell.set_facecolor("#E8EEF5")
-            else:
-                cell.set_facecolor("white")
-            cell.set_edgecolor(DIVIDER)
-
-        if warnings_list and page_idx == 0:
-            warn_text = "Warnings:\n" + "\n".join(f"  * {w}" for w in warnings_list)
-            fig.text(0.05, 0.01, warn_text, fontsize=7, color="#CC4400",
-                     va="bottom", family="monospace")
-
-        save_fig(pdf, fig)
-
-
-def plot_library_sizes(pdf, colnames, lib_sizes, sample_colors):
-    """Page 2 — library sizes bar chart."""
-    n   = len(colnames)
-    fig_w = max(8, n * 0.35 + 2)
-    fig, ax = plt.subplots(figsize=(fig_w, 6))
-    add_page_title(fig, "Library Sizes",
-                   "Total mapped reads per sample (all counts, pre-filter). "
-                   "Blue line = mean, dashed = mean +/- 1 SD.")
-
-    ax.bar(colnames, lib_sizes / 1e6,
-           color=[sample_colors[s] for s in colnames],
-           edgecolor="white", linewidth=0.5, zorder=3)
-    mean_sd_lines(ax, lib_sizes / 1e6)
-    ax.set_ylabel("Library size (millions of reads)")
-    set_bar_xlabels(ax, colnames)
-    ax.legend(fontsize=8)
-    ax.yaxis.grid(True, zorder=0)
-    ax.set_axisbelow(True)
-    add_data_note(ax, "Data: all raw counts")
-
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    save_fig(pdf, fig)
-
-
-def plot_cpm_distributions(pdf, colnames, lcpm, sample_colors, n_genes_filt):
-    """Page 3 — density + boxplot of log2 CPM+1."""
-    n         = len(colnames)
-    data_note = f"Data: CPM-filtered genes (n={n_genes_filt}, CPM > 1 in >= 1 sample)"
-    fig_w     = max(14, n * 0.25 + 8)
-    fig, axes = plt.subplots(1, 2, figsize=(fig_w, 6))
-    add_page_title(fig, "CPM Distributions (log2 CPM+1)",
-                   "Left: density curves — all samples should overlap. "
-                   "Right: boxplots — medians should align. "
-                   "Systematic shifts indicate sample-level bias.")
-
-    # Density
-    ax = axes[0]
-    for i, s in enumerate(colnames):
-        vals = lcpm[i, :]
-        vals = vals[np.isfinite(vals)]
-        try:
-            kde_x = np.linspace(vals.min(), vals.max(), 300)
-            kde   = gaussian_kde(vals, bw_method=0.3)
-            ax.plot(kde_x, kde(kde_x), color=sample_colors[s],
-                    linewidth=1.2, alpha=0.8, label=s)
-        except Exception:
-            warn(f"KDE failed for {s}, skipping density curve.")
-    ax.set_xlabel("log2 CPM+1")
-    ax.set_ylabel("Density")
-    ax.set_title("Density per sample")
-    if n <= 20:
-        ax.legend(fontsize=7, loc="upper right", framealpha=0.7)
-    add_data_note(ax, data_note)
-
-    # Boxplot
-    ax2 = axes[1]
-    bp  = ax2.boxplot(
-        [lcpm[i, :] for i in range(n)],
-        patch_artist=True, notch=False,
-        medianprops=dict(color="black", linewidth=1.5),
-        whiskerprops=dict(linewidth=0.8),
-        capprops=dict(linewidth=0.8),
-        flierprops=dict(marker=".", markersize=1, alpha=0.2, color=GREY),
-        zorder=3,
+def fig_overview(names, lib, n_before, n_after, colors):
+    """Two-panel overview: library sizes (left) + raw vs filtered gene counts (right)."""
+    n   = len(names)
+    tfs = max(7, 10 - n // 12)
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["Library sizes (total mapped reads)",
+                        "Genes detected: raw (faded) vs CPM-filtered (solid)"],
+        horizontal_spacing=0.08,
     )
-    for patch, s in zip(bp["boxes"], colnames):
-        patch.set_facecolor(sample_colors[s])
-        patch.set_alpha(0.7)
-    ax2.set_xticks(range(1, n + 1))
-    ax2.set_xticklabels(colnames, rotation=45, ha="right",
-                        fontsize=bar_tick_fontsize(n))
-    ax2.set_ylabel("log2 CPM+1")
-    ax2.set_title("Boxplot per sample")
-    ax2.yaxis.grid(True, zorder=0)
-    ax2.set_axisbelow(True)
-    add_data_note(ax2, data_note)
+    # Left — library sizes + mean line
+    fig.add_trace(go.Bar(
+        x=names, y=(lib / 1e6).tolist(),
+        marker_color=[colors[s] for s in names], opacity=0.85,
+        name="Library size", showlegend=False,
+        hovertemplate="%{x}<br><b>%{y:.2f} M reads</b><extra></extra>",
+    ), row=1, col=1)
+    m = float(np.mean(lib / 1e6))
+    fig.add_hline(y=m, line_dash="dash", line_color="#666", line_width=1.2,
+                  annotation_text=f"Mean {m:.1f} M", annotation_font_size=9,
+                  annotation_position="top right", row=1, col=1)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    save_fig(pdf, fig)
+    # Right — raw genes (faded) + filtered genes (solid), same colour per sample
+    fig.add_trace(go.Bar(
+        x=names, y=list(n_before),
+        marker_color=[colors[s] for s in names], opacity=0.30,
+        name="Genes detected (raw)", offsetgroup="a",
+        hovertemplate="%{x}<br>Raw: <b>%{y:,} genes</b><extra></extra>",
+    ), row=1, col=2)
+    fig.add_trace(go.Bar(
+        x=names, y=list(n_after),
+        marker_color=[colors[s] for s in names], opacity=0.90,
+        name="Genes detected (CPM-filtered)", offsetgroup="b",
+        hovertemplate="%{x}<br>Filtered: <b>%{y:,} genes</b><extra></extra>",
+    ), row=1, col=2)
 
+    base(fig, "Dataset Overview — library sizes and gene detection (faded = raw, solid = CPM-filtered)",
+         max(420, n * 5 + 170))
+    fig.update_layout(
+        barmode="group",
+        legend=dict(x=0.52, y=1.10, orientation="h", font_size=10),
+    )
+    for col in [1, 2]:
+        fig.update_xaxes(tickangle=-40, tickfont_size=tfs, row=1, col=col)
+    fig.update_yaxes(title_text="Millions of reads", row=1, col=1)
+    fig.update_yaxes(title_text="Number of genes", row=1, col=2)
+    return fig
 
-def plot_detected_genes(pdf, colnames, n_genes_before, n_genes_after, sample_colors):
-    """Page 4 — detected genes before/after filter."""
-    n     = len(colnames)
-    fig_w = max(14, n * 0.35 + 6)
-    fig, axes = plt.subplots(1, 2, figsize=(fig_w, 6))
-    add_page_title(fig, "Detected Genes per Sample",
-                   "Left: all genes with any count. Right: after CPM > 1 filter. "
-                   "Blue line = mean, dashed = mean +/- 1 SD.")
+# ── Section 2: QC Metrics ─────────────────────────────────────────────────────
 
-    for ax, vals, title, note in [
-        (axes[0], n_genes_before, "Genes detected (all counts, raw)",
-         "Data: all raw counts, genes with count > 0"),
-        (axes[1], n_genes_after,  "Genes detected (CPM > 1 filtered)",
-         "Data: CPM-filtered counts (CPM > 1 in >= 1 sample)"),
-    ]:
-        ax.bar(colnames, vals,
-               color=[sample_colors[s] for s in colnames],
-               edgecolor="white", linewidth=0.5, zorder=3)
-        mean_sd_lines(ax, np.array(vals, dtype=float))
-        ax.set_ylabel("Number of detected genes")
-        set_bar_xlabels(ax, colnames)
-        ax.set_title(title, fontweight="bold")
-        ax.legend(fontsize=8)
-        ax.yaxis.grid(True, zorder=0)
-        ax.set_axisbelow(True)
-        add_data_note(ax, note)
+def fig_library_sizes(names, lib, colors):
+    n = len(names)
+    fig = go.Figure(go.Bar(
+        x=names, y=(lib / 1e6).tolist(),
+        marker_color=[colors[s] for s in names],
+        hovertemplate="%{x}<br><b>%{y:.2f} M reads</b><extra></extra>",
+    ))
+    hline_mean_sd(fig, lib / 1e6)
+    base(fig, "Library Sizes — total mapped reads per sample (all raw counts)",
+         max(420, n * 5 + 150))
+    fig.update_layout(showlegend=False,
+                      xaxis=dict(title="Sample", tickangle=-40,
+                                 tickfont_size=max(7, 10 - n // 12)),
+                      yaxis_title="Millions of reads")
+    return fig
 
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    save_fig(pdf, fig)
+def fig_detected_raw(names, n_before, colors):
+    n = len(names)
+    fig = go.Figure(go.Bar(
+        x=names, y=list(n_before),
+        marker_color=[colors[s] for s in names],
+        hovertemplate="%{x}<br><b>%{y:,} genes</b><extra></extra>",
+    ))
+    hline_mean_sd(fig, np.array(n_before, dtype=float))
+    base(fig, "Genes Detected per Sample — raw counts (count > 0)",
+         max(420, n * 5 + 150))
+    fig.update_layout(showlegend=False,
+                      xaxis=dict(title="Sample", tickangle=-40,
+                                 tickfont_size=max(7, 10 - n // 12)),
+                      yaxis_title="Number of genes (raw)")
+    return fig
 
+def fig_detected_filt(names, n_after, colors):
+    n = len(names)
+    fig = go.Figure(go.Bar(
+        x=names, y=list(n_after),
+        marker_color=[colors[s] for s in names],
+        hovertemplate="%{x}<br><b>%{y:,} genes</b><extra></extra>",
+    ))
+    hline_mean_sd(fig, np.array(n_after, dtype=float))
+    base(fig, "Genes Detected per Sample — after CPM > 1 filter",
+         max(420, n * 5 + 150))
+    fig.update_layout(showlegend=False,
+                      xaxis=dict(title="Sample", tickangle=-40,
+                                 tickfont_size=max(7, 10 - n // 12)),
+                      yaxis_title="Number of genes (CPM-filtered)")
+    return fig
 
-def plot_ma_plots(pdf, colnames, lcpm, n_genes_filt):
-    """Page 5a — MA plots (only for n <= 10 samples)."""
-    n         = len(colnames)
-    ref       = lcpm.mean(axis=0)
-    data_note = f"Data: CPM-filtered genes (n={n_genes_filt})"
-    ncols     = min(4, n)
-    nrows     = int(np.ceil(n / ncols))
+def fig_cpm_boxplot(names, lcpm, colors):
+    n = len(names)
+    fig = go.Figure()
+    for i, s in enumerate(names):
+        fig.add_trace(go.Box(
+            y=lcpm[i].tolist(), name=s,
+            marker_color=colors[s], line_color=colors[s],
+            boxpoints=False,
+            hovertemplate=f"<b>{s}</b><br>%{{y:.2f}}<extra></extra>",
+        ))
+    base(fig, "CPM Distributions — log₂(CPM+1) per sample (CPM-filtered genes)",
+         max(460, n * 6 + 150))
+    fig.update_layout(showlegend=False,
+                      xaxis=dict(title="Sample", tickangle=-40,
+                                 tickfont_size=max(7, 10 - n // 12)),
+                      yaxis_title="log₂(CPM+1)")
+    return fig
 
-    fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(ncols * 3.5, nrows * 3.2),
-                             squeeze=False)
-    add_page_title(fig, "MA Plots — Each Sample vs Pseudo-bulk Mean",
-                   "M = log2(sample CPM+1) - log2(mean CPM+1).  "
-                   "Green = sample mean M +/- 1 SD.  Points should scatter around M=0.")
-
-    for idx, s in enumerate(colnames):
-        r, c  = divmod(idx, ncols)
-        ax    = axes[r][c]
-        A     = (lcpm[idx, :] + ref) / 2
-        M     = lcpm[idx, :] - ref
+def fig_cpm_density(names, lcpm, colors):
+    fig = go.Figure()
+    for i, s in enumerate(names):
+        v = lcpm[i]; v = v[np.isfinite(v)]
         try:
-            xy    = np.vstack([A, M])
-            z     = gaussian_kde(xy)(xy)
-            order = z.argsort()
-            ax.scatter(A[order], M[order], c=z[order], s=2, cmap="plasma",
-                       alpha=0.6, linewidths=0, rasterized=True)
+            x = np.linspace(float(v.min()), float(v.max()), 300)
+            y = gaussian_kde(v, bw_method=0.3)(x)
+            fig.add_trace(go.Scatter(
+                x=x.tolist(), y=y.tolist(), mode="lines", name=s,
+                line=dict(color=colors[s], width=1.5),
+                hovertemplate=f"<b>{s}</b>: %{{y:.4f}}<extra></extra>",
+            ))
         except Exception:
-            ax.scatter(A, M, s=2, alpha=0.3, color=BLUE, rasterized=True)
+            pass
+    base(fig, "CPM Density Curves — log₂(CPM+1); all samples should broadly overlap")
+    fig.update_layout(xaxis_title="log₂(CPM+1)", yaxis_title="Density",
+                      legend=dict(font_size=9, itemclick="toggleothers"))
+    return fig
 
-        mean_m = np.mean(M)
-        sd_m   = np.std(M)
-        ax.axhline(0,             color=RED,   linewidth=1.0, linestyle="--", zorder=4)
-        ax.axhline(mean_m,        color=GREEN, linewidth=1.0, linestyle="-",
-                   label=f"mean={mean_m:.2f}", zorder=4)
-        ax.axhline(mean_m + sd_m, color=GREEN, linewidth=0.7, linestyle="--", zorder=4)
-        ax.axhline(mean_m - sd_m, color=GREEN, linewidth=0.7, linestyle="--", zorder=4)
-        ax.set_title(s, fontsize=8, fontweight="bold")
-        ax.set_xlabel("A (mean log2 CPM+1)", fontsize=7)
-        ax.set_ylabel("M (log2 ratio)", fontsize=7)
-        ax.tick_params(labelsize=7)
-        ax.legend(fontsize=6, loc="upper right")
-        add_data_note(ax, data_note)
-
-    for idx in range(n, nrows * ncols):
-        r, c = divmod(idx, ncols)
-        axes[r][c].set_visible(False)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
-    save_fig(pdf, fig)
-
-
-def plot_umap_kmeans(pdf, colnames, lcpm, sample_colors, n_top, run_warnings):
-    """Page 5b — UMAP + k=2 k-means (n > 10 samples)."""
-    gene_vars = lcpm.var(axis=0)
-    top_idx   = np.argsort(gene_vars)[-n_top:]
-    X         = lcpm[:, top_idx]
-    n         = len(colnames)
-    data_note = f"Data: top {n_top} most variable genes (log2 CPM+1, CPM-filtered)"
-
-    try:
-        from umap import UMAP
-        reducer   = UMAP(n_components=2,
-                         n_neighbors=max(2, min(15, n - 1)),
-                         min_dist=0.3, random_state=42, verbose=False)
-        embedding = reducer.fit_transform(X)
-        embed_lbl = "UMAP"
-    except Exception as e:
-        run_warnings.append(f"UMAP failed ({e}); using PCA 2D fallback.")
-        embedding = PCA(n_components=2).fit_transform(X)
-        embed_lbl = "PC"
-
-    km             = KMeans(n_clusters=2, random_state=42, n_init=10)
-    cluster_labels = km.fit_predict(X)
-    cluster_pal    = [BLUE, RED]
-
-    fig = plt.figure(figsize=(14, 6))
-    add_page_title(fig, f"{embed_lbl} Embedding + k-means (k=2)",
-                   f"Left: coloured by sample name. "
-                   f"Right: coloured by k-means cluster. "
-                   f"Labels shown inline (n<={LABEL_INLINE_MAX}) or as legend (n>{LABEL_INLINE_MAX}).")
-
-    gs = gridspec.GridSpec(1, 2, figure=fig, wspace=0.38)
-
-    ax1 = fig.add_subplot(gs[0])
-    scatter_with_labels(ax1, embedding[:, 0], embedding[:, 1],
-                        colnames, sample_colors)
-    ax1.set_xlabel(f"{embed_lbl} 1", fontsize=9)
-    ax1.set_ylabel(f"{embed_lbl} 2", fontsize=9)
-    ax1.set_title(f"{embed_lbl} — by sample", fontweight="bold")
-    add_data_note(ax1, data_note)
-
-    ax2 = fig.add_subplot(gs[1])
-    cl_colors = {s: cluster_pal[cluster_labels[i]] for i, s in enumerate(colnames)}
-    scatter_with_labels(ax2, embedding[:, 0], embedding[:, 1],
-                        colnames, cl_colors)
-    ax2.legend(handles=[Patch(facecolor=cluster_pal[k], label=f"Cluster {k+1}")
-                         for k in range(2)],
-               fontsize=9, loc="best", framealpha=0.8)
-    ax2.set_xlabel(f"{embed_lbl} 1", fontsize=9)
-    ax2.set_ylabel(f"{embed_lbl} 2", fontsize=9)
-    ax2.set_title(f"{embed_lbl} — k-means (k=2)", fontweight="bold")
-    add_data_note(ax2, data_note)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    save_fig(pdf, fig)
-
-
-def plot_sample_correlation(pdf, colnames, lcpm, sample_colors, n_genes_filt):
-    """Page 6 — sample-to-sample Pearson correlation heatmap."""
-    n         = len(colnames)
-    cor       = np.corrcoef(lcpm)
-    data_note = f"Data: CPM-filtered genes (n={n_genes_filt}, log2 CPM+1)"
-
-    try:
-        dist  = squareform(1 - cor, checks=False)
-        dist  = np.clip(dist, 0, None)
-        link  = linkage(dist, method="average")
-        order = dendrogram(link, no_plot=True)["leaves"]
-    except Exception:
-        warn("Hierarchical clustering of correlation matrix failed; using original order.")
-        order = list(range(n))
-
-    cor_ord   = cor[np.ix_(order, order)]
-    names_ord = [colnames[i] for i in order]
-
-    # Scale figure so every cell is at least 0.18 inches
-    cell_sz = max(0.18, min(0.45, 7.0 / n))
-    fig_sz  = max(6, n * cell_sz + 2.5)
-    fig     = plt.figure(figsize=(fig_sz, fig_sz))
-    add_page_title(fig, "Sample-to-Sample Pearson Correlation",
-                   "Ordered by hierarchical clustering. "
-                   "Values close to 1 = high similarity. "
-                   "Unexpected low-correlation samples are outlier candidates.")
-
-    ax   = fig.add_axes([0.18, 0.14, 0.68, 0.70])
-    vmin = max(float(cor_ord.min()) - 0.01, 0.5)
-    im   = ax.imshow(cor_ord, cmap="RdYlBu_r", vmin=vmin, vmax=1.0, aspect="auto")
-    apply_heatmap_ticks(ax, names_ord)
-
-    # Annotate cells only if they are large enough to read
-    if n <= 20:
-        for i in range(n):
-            for j in range(n):
-                v = cor_ord[i, j]
-                ax.text(j, i, f"{v:.2f}", ha="center", va="center",
-                        fontsize=5, color="black" if v > 0.7 else "white")
-
-    cbar = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Pearson r", fontsize=8)
-    fig.text(0.99, 0.01, data_note, ha="right", va="bottom",
-             fontsize=7, color=GREY, style="italic")
-    save_fig(pdf, fig)
-
-
-def plot_pca(pdf, colnames, lcpm, sample_colors, n_top):
-    """Page 7 — PCA: PC1/PC2, PC1/PC3, scree plot."""
-    gene_vars = lcpm.var(axis=0)
-    X         = lcpm[:, np.argsort(gene_vars)[-n_top:]]
-    data_note = f"Data: top {n_top} most variable genes (log2 CPM+1, CPM-filtered)"
-    n_comp    = min(len(colnames), X.shape[1], 10)
-
-    if n_comp < 2:
-        warn("Not enough samples/genes for PCA.")
-        return
-
-    coords = PCA(n_components=n_comp).fit(X)
-    pct    = coords.explained_variance_ratio_ * 100
-    emb    = coords.transform(X)
-
-    fig = plt.figure(figsize=(14, 5.5))
-    add_page_title(fig, "Principal Component Analysis",
-                   f"Top {n_top} most variable genes (log2 CPM+1, CPM-filtered). "
-                   "Isolated samples = outliers. Natural groupings suggest batch or biology.")
-
-    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.42)
-
-    def pc_panel(ax, xd, yd, xl, yl, title):
-        scatter_with_labels(ax, xd, yd, colnames, sample_colors)
-        ax.set_xlabel(xl, fontsize=9)
-        ax.set_ylabel(yl, fontsize=9)
-        ax.set_title(title, fontweight="bold")
-        ax.axhline(0, color=DIVIDER, linewidth=0.5)
-        ax.axvline(0, color=DIVIDER, linewidth=0.5)
-        add_data_note(ax, data_note)
-
-    pc_panel(fig.add_subplot(gs[0]),
-             emb[:, 0], emb[:, 1],
-             f"PC1 ({pct[0]:.1f}%)", f"PC2 ({pct[1]:.1f}%)", "PC1 vs PC2")
-
-    ax2 = fig.add_subplot(gs[1])
-    if n_comp >= 3:
-        pc_panel(ax2, emb[:, 0], emb[:, 2],
-                 f"PC1 ({pct[0]:.1f}%)", f"PC3 ({pct[2]:.1f}%)", "PC1 vs PC3")
-    else:
-        ax2.set_visible(False)
-
-    ax3 = fig.add_subplot(gs[2])
-    cumvar = np.cumsum(pct)
-    ax3.bar(range(1, n_comp + 1), pct, color=BLUE, alpha=0.75, label="Per-PC")
-    ax3.plot(range(1, n_comp + 1), cumvar, color=RED, marker="o",
-             markersize=4, linewidth=1.4, label="Cumulative")
-    ax3.axhline(80, color=GREY, linestyle="--", linewidth=0.8, label="80% line")
-    ax3.set_xlabel("PC")
-    ax3.set_ylabel("% variance")
-    ax3.set_title("Scree Plot", fontweight="bold")
-    ax3.legend(fontsize=8)
-    ax3.set_xticks(range(1, n_comp + 1))
-    add_data_note(ax3, data_note)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    save_fig(pdf, fig)
-
-
-def plot_outlier_summary(pdf, colnames, lcpm, lib_sizes, n_genes_after, n_genes_filt):
-    """Page 8 — robust Z-score heatmap across QC metrics."""
-    n       = len(colnames)
+def fig_outlier_heatmap(names, lcpm, lib, n_after, n_filt):
+    n = len(names)
+    # ── Eight QC metrics ──────────────────────────────────────────────────────
+    cor_mat  = np.corrcoef(lcpm)
+    np.fill_diagonal(cor_mat, np.nan)          # exclude self-correlation
     metrics = {
-        "Library size\n(all counts)":          lib_sizes.astype(float),
-        "Detected genes\n(CPM filtered)":       np.array(n_genes_after, dtype=float),
-        "Median log2 CPM\n(CPM filtered)":      np.median(lcpm, axis=1),
-        "CV (std/mean)\n(CPM filtered)":        np.array([
-            np.std(lcpm[i]) / (np.mean(lcpm[i]) + 1e-9) for i in range(n)]),
-        "Mean inter-sample r\n(CPM filtered)":  np.array([
-            np.corrcoef(lcpm)[i].mean() for i in range(n)]),
+        "Library size\n(raw)":               lib.astype(float),
+        "Genes detected\n(CPM-filtered)":    np.array(n_after, dtype=float),
+        "Median log₂ CPM\n(CPM-filtered)":   np.median(lcpm, axis=1),
+        "IQR log₂ CPM\n(CPM-filtered)":      np.percentile(lcpm, 75, axis=1)
+                                              - np.percentile(lcpm, 25, axis=1),
+        "CV (std/mean)\n(CPM-filtered)":     np.array([lcpm[i].std() / (lcpm[i].mean() + 1e-9)
+                                                        for i in range(n)]),
+        "% zeros\n(CPM-filtered)":           np.array([(lcpm[i] == 0).mean() * 100
+                                                        for i in range(n)]),
+        "Mean sample r\n(CPM-filtered)":     np.nanmean(cor_mat, axis=1),
+        "Min sample r\n(CPM-filtered)":      np.nanmin(cor_mat, axis=1),
     }
+    Z = np.zeros((n, len(metrics)))
+    for j, v in enumerate(metrics.values()):
+        mad        = median_abs_deviation(v) + 1e-9
+        Z[:, j]   = (v - np.median(v)) / mad
 
-    zmat = np.zeros((n, len(metrics)))
-    for j, vals in enumerate(metrics.values()):
-        med        = np.median(vals)
-        mad        = median_abs_deviation(vals) + 1e-9
-        zmat[:, j] = (vals - med) / mad
-
-    row_h = max(0.25, min(0.55, 8.0 / n))
-    fig_h = max(5, n * row_h + 2.5)
-    fig, ax = plt.subplots(figsize=(11, fig_h))
-    add_page_title(fig, "Multi-Metric Outlier Overview (Robust Z-scores)",
-                   "Each cell = (value - median) / MAD. "
-                   "Red border = |Z| >= 2 on at least one metric. "
-                   "Data sources labelled in column headers.")
-
-    vmax = max(3.0, float(np.abs(zmat).max()))
-    im   = ax.imshow(zmat, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
-
-    ax.set_xticks(range(len(metrics)))
-    ax.set_xticklabels(list(metrics.keys()), rotation=30, ha="right", fontsize=8)
-    fs_y = heatmap_tick_fontsize(n)
-    ax.set_yticks(range(n))
-    ax.set_yticklabels(colnames if fs_y > 0 else [], fontsize=fs_y)
-
-    # Cell annotations — skip if rows are too thin to read
-    if row_h >= 0.22:
-        ann_fs = max(5, min(8, int(row_h * 14)))
-        for i in range(n):
-            for j in range(len(metrics)):
-                v = zmat[i, j]
-                ax.text(j, i, f"{v:+.1f}", ha="center", va="center",
-                        fontsize=ann_fs,
-                        color="black" if abs(v) < 1.5 else "white",
-                        fontweight="bold" if abs(v) >= 2 else "normal")
-
+    ann    = [[f"{Z[i,j]:+.1f}" for j in range(len(metrics))] for i in range(n)]
+    shapes = []
     for i in range(n):
-        if np.any(np.abs(zmat[i]) >= 2):
-            ax.add_patch(plt.Rectangle((-0.5, i - 0.5), len(metrics), 1,
-                                        fill=False, edgecolor=RED, linewidth=1.8))
+        if np.any(np.abs(Z[i]) >= 2):
+            shapes.append(dict(type="rect", x0=-0.5, x1=len(metrics) - 0.5,
+                               y0=i - 0.5, y1=i + 0.5,
+                               line=dict(color="red", width=2),
+                               fillcolor="rgba(0,0,0,0)", layer="above"))
+    tfs = max(7, 11 - n // 8)
+    fig = go.Figure(go.Heatmap(
+        z=Z.tolist(), x=list(metrics.keys()), y=list(names),
+        text=ann, texttemplate="%{text}", textfont_size=max(7, tfs - 1),
+        colorscale="RdBu", reversescale=True, zmid=0,
+        colorbar=dict(title="Robust Z", thickness=14),
+        hovertemplate="<b>%{y}</b> — %{x}<br>Z = %{z:.3f}<extra></extra>",
+    ))
+    base(fig, "Multi-Metric Outlier Overview — 8 QC metrics, robust Z-score per sample "
+              "(red border = |Z| ≥ 2 on any metric; hover for exact values)",
+         max(420, n * 28 + 140))
+    fig.update_layout(
+        shapes=shapes,
+        xaxis=dict(tickangle=-30, tickfont_size=9, automargin=True),
+        yaxis=dict(tickfont_size=tfs, autorange="reversed", automargin=True),
+        margin=dict(l=90, r=40, t=70, b=120),
+    )
+    return fig
 
-    fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02).set_label(
-        "Robust Z-score", fontsize=8)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    save_fig(pdf, fig)
+# ── Section 3: Sample Structure ───────────────────────────────────────────────
 
+def fig_correlation(names, lcpm, n_filt, group_labels=None):
+    """
+    Two-panel correlation heatmap:
+      Left  — samples ordered by hierarchical clustering
+      Right — samples ordered by suspected group (if available), else by mean r descending
+    """
+    n   = len(names)
+    cor = np.corrcoef(lcpm)
+    tfs = max(6, 10 - n // 8)
 
-def plot_hierarchical_clustering(pdf, colnames, lcpm, n_genes_filt):
-    """Page 9 — Ward linkage dendrogram."""
-    data_note = f"Data: CPM-filtered genes (n={n_genes_filt}, log2 CPM+1)"
+    # Order 1: hierarchical clustering
+    try:
+        d      = np.clip(squareform(1 - cor, checks=False), 0, None)
+        order1 = dendrogram(linkage(d, method="average"), no_plot=True)["leaves"]
+    except Exception:
+        order1 = list(range(n))
+
+    # Order 2: by group label (if provided), else by mean correlation descending
+    if group_labels is not None and len(group_labels) == n:
+        order2 = list(np.argsort(group_labels))
+        order2_title = "Ordered by estimated group"
+    else:
+        mean_r = cor.mean(axis=1)
+        order2 = list(np.argsort(mean_r)[::-1])
+        order2_title = "Ordered by mean inter-sample r (high→low)"
+
+    ann_thresh = 40   # only annotate cells when n is small
+    vmin = max(float(cor.min()) - 0.01, 0.5)
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=[f"Ordered by hierarchical clustering",
+                        order2_title],
+        horizontal_spacing=0.08,
+    )
+
+    for col_idx, order in enumerate([order1, order2], start=1):
+        co  = cor[np.ix_(order, order)]
+        no  = [names[i] for i in order]
+        ann = [[f"{co[i,j]:.2f}" for j in range(n)] for i in range(n)] if n <= ann_thresh else None
+        fig.add_trace(go.Heatmap(
+            z=co.tolist(), x=no, y=no,
+            text=ann, texttemplate="%{text}" if ann else None,
+            textfont_size=max(5, tfs - 2),
+            colorscale="RdBu", reversescale=True,
+            zmin=vmin, zmax=1.0,
+            colorbar=dict(title="Pearson r", thickness=12,
+                          x=0.46 if col_idx == 1 else 1.01),
+            hovertemplate="<b>%{x}</b> vs <b>%{y}</b><br>r = %{z:.4f}<extra></extra>",
+            showscale=True,
+        ), row=1, col=col_idx)
+        fig.update_xaxes(tickangle=-45, tickfont_size=tfs, row=1, col=col_idx,
+                         automargin=True)
+        fig.update_yaxes(tickfont_size=tfs, autorange="reversed", row=1, col=col_idx,
+                         automargin=True)
+
+    base(fig, f"Sample-to-Sample Pearson Correlation — log₂(CPM+1), "
+              f"CPM-filtered genes (n={n_filt})",
+         max(520, n * 22 + 130))
+    fig.update_layout(margin=dict(l=80, r=80, t=100, b=80))
+    return fig
+
+def fig_ward_dendrogram(names, lcpm, n_filt):
+    n = len(names)
     try:
         link = linkage(pdist(lcpm, metric="euclidean"), method="ward")
+        dend = dendrogram(link, labels=list(names), no_plot=True,
+                          color_threshold=0.7 * float(link[:, 2].max()))
     except Exception as e:
-        warn(f"Hierarchical clustering failed: {e}")
-        return
+        warn(f"Dendrogram: {e}"); return None
+    fig = go.Figure()
+    for xs, ys, col in zip(dend["icoord"], dend["dcoord"], dend["color_list"]):
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines",
+                                 line=dict(color=safe_color(col), width=1.5),
+                                 hoverinfo="skip", showlegend=False))
+    lo = dend["leaves"]
+    tfs = max(7, 11 - n // 10)
+    base(fig, f"Hierarchical Sample Clustering — Euclidean distance, Ward linkage "
+              f"(CPM-filtered genes n={n_filt}; longer branches = more dissimilar)", 450)
+    fig.update_layout(
+        xaxis=dict(tickvals=[5 + 10 * i for i in range(n)],
+                   ticktext=[names[i] for i in lo],
+                   tickangle=-45, tickfont_size=tfs, showgrid=False),
+        yaxis_title="Euclidean distance (log₂ CPM+1)",
+    )
+    return fig
 
-    n     = len(colnames)
-    fig_w = max(8, n * 0.45 + 2)
-    # Scale leaf font size
-    lfs   = max(5, min(9, int(9 - (n - 20) * 0.12)))
+def _pca_coords(lcpm, n_top, n):
+    X = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    nc = min(n, X.shape[1], 10)
+    if nc < 2:
+        return None, None, 0
+    p = PCA(n_components=nc)
+    C = p.fit_transform(X)
+    return C, p.explained_variance_ratio_ * 100, nc
 
-    fig, ax = plt.subplots(figsize=(fig_w, 6))
-    add_page_title(fig, "Hierarchical Sample Clustering (Euclidean / Ward)",
-                   "Samples that cluster tightly are similar. "
-                   "Long branch lengths indicate dissimilarity — potential outliers or distinct groups.")
+def fig_pca_3d(names, lcpm, n_top, colors):
+    """Interactive 3D PCA scatter — drag to rotate, hover for sample name."""
+    n = len(names)
+    C, pct, nc = _pca_coords(lcpm, n_top, n)
+    if C is None or nc < 2:
+        return None, C, pct
+    # Use 3 components if available, else pad with zeros
+    x = C[:, 0].tolist()
+    y = C[:, 1].tolist()
+    z = (C[:, 2].tolist() if nc >= 3
+         else [0.0] * n)
+    pct_z = pct[2] if nc >= 3 else 0.0
+    fig = go.Figure()
+    for i, s in enumerate(names):
+        fig.add_trace(go.Scatter3d(
+            x=[x[i]], y=[y[i]], z=[z[i]],
+            mode="markers+text" if n <= 20 else "markers",
+            name=s,
+            text=[s] if n <= 20 else None,
+            textposition="top center",
+            textfont=dict(size=9),
+            marker=dict(color=colors[s], size=7,
+                        line=dict(color="white", width=0.5)),
+            hovertemplate=(f"<b>{s}</b><br>"
+                           f"PC1=%{{x:.2f}}<br>PC2=%{{y:.2f}}<br>PC3=%{{z:.2f}}"
+                           f"<extra></extra>"),
+            showlegend=(n <= 25),
+        ))
+    # Use tighter margins to avoid label/axis overlap
+    fig.update_layout(
+        **{k: v for k, v in BASE.items() if k != "margin"},
+        margin=dict(l=0, r=0, t=80, b=0),
+        title=dict(
+            text=(f"PCA 3D — PC1 ({pct[0]:.1f}%) × PC2 ({pct[1]:.1f}%) × "
+                  f"PC3 ({pct_z:.1f}%) — top {n_top} variable genes; drag to rotate"),
+            font_size=13,
+        ),
+        height=max(560, n * 7 + 180),
+        scene=dict(
+            xaxis=dict(title=dict(text=f"PC1 ({pct[0]:.1f}%)", font=dict(size=11)),
+                       tickfont=dict(size=9), showbackground=True,
+                       backgroundcolor="#f0f0f0"),
+            yaxis=dict(title=dict(text=f"PC2 ({pct[1]:.1f}%)", font=dict(size=11)),
+                       tickfont=dict(size=9), showbackground=True,
+                       backgroundcolor="#f0f0f0"),
+            zaxis=dict(title=dict(text=f"PC3 ({pct_z:.1f}%)" if nc >= 3 else "PC3 (n/a)",
+                                  font=dict(size=11)),
+                       tickfont=dict(size=9), showbackground=True,
+                       backgroundcolor="#f0f0f0"),
+            bgcolor="white",
+        ),
+        legend=dict(font_size=9, itemsizing="constant"),
+    )
+    return fig, C, pct
 
-    dendrogram(link, labels=colnames, ax=ax,
-               leaf_rotation=45, leaf_font_size=lfs,
-               color_threshold=0.7 * max(link[:, 2]),
-               above_threshold_color=GREY)
+def fig_scree(lcpm, n_top):
+    n = lcpm.shape[0]
+    X = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    nc = min(n, X.shape[1], 10)
+    if nc < 2:
+        return None
+    p = PCA(n_components=nc); p.fit(X)
+    pct = p.explained_variance_ratio_ * 100
+    cum = np.cumsum(pct)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=list(range(1, nc + 1)), y=pct.tolist(), name="Per-PC variance",
+                         hovertemplate="PC%{x}<br>%{y:.1f}%<extra></extra>"))
+    fig.add_trace(go.Scatter(x=list(range(1, nc + 1)), y=cum.tolist(),
+                             mode="lines+markers", name="Cumulative %",
+                             hovertemplate="PC%{x}<br>cumulative %{y:.1f}%<extra></extra>"))
+    fig.add_hline(y=80, line_dash="dot", line_color="grey", line_width=1,
+                  annotation_text="80%", annotation_font_size=9)
+    base(fig, f"PCA Scree Plot — variance explained per PC (top {n_top} variable genes)", 390)
+    fig.update_layout(xaxis=dict(title="Principal Component",
+                                 tickvals=list(range(1, nc + 1))),
+                      yaxis_title="% Variance Explained")
+    return fig
 
-    ax.set_ylabel("Euclidean distance (log2 CPM+1)")
-    ax.yaxis.grid(True, zorder=0)
-    ax.set_axisbelow(True)
-    add_data_note(ax, data_note)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    save_fig(pdf, fig)
-
-
-def plot_mean_cv(pdf, colnames, lcpm, cpm, geneids, n_genes_filt):
-    """Page 10 — mean expression vs CV scatter with running-median floor."""
-    data_note = f"Data: CPM-filtered genes (n={n_genes_filt}, log2 CPM+1)"
-    G         = lcpm.T                             # genes x samples
-    mean_expr = G.mean(axis=1)
-    cv        = G.std(axis=1) / (G.mean(axis=1) + 1e-9)
-
-    n_bins  = 30
-    bin_idx = np.array_split(np.argsort(mean_expr), n_bins)
-    bin_x   = np.array([mean_expr[b].mean() for b in bin_idx])
-    bin_y   = np.array([np.median(cv[b])     for b in bin_idx])
-
-    try:
-        z     = gaussian_kde(np.vstack([mean_expr, cv]))(np.vstack([mean_expr, cv]))
-        order = z.argsort()
-    except Exception:
-        order = np.arange(len(mean_expr))
-        z     = np.ones(len(mean_expr))
-
-    fig, ax = plt.subplots(figsize=(9, 6))
-    add_page_title(fig, "Mean Expression vs Coefficient of Variation",
-                   "Each point = one gene (CPM-filtered). "
-                   "Colour = local density. "
-                   "Curve = running median CV. "
-                   "Labelled = top 20 high-CV genes (mean log2 CPM > 1).")
-
-    sc = ax.scatter(mean_expr[order], cv[order], c=z[order],
-                    s=3, cmap="viridis", alpha=0.5, linewidths=0, rasterized=True)
-    ax.plot(bin_x, bin_y, color=RED, linewidth=1.8, label="Running median CV", zorder=5)
-
-    expressed  = mean_expr > 1.0
-    top_cv_idx = (np.where(expressed)[0][np.argsort(cv[expressed])[-20:]]
-                  if expressed.sum() >= 20 else np.argsort(cv)[-20:])
-
-    texts = []
-    for idx in top_cv_idx:
-        t = ax.text(mean_expr[idx], cv[idx], geneids[idx],
-                    fontsize=6, color="#222222", ha="left", va="bottom")
-        texts.append(t)
-    adjust_text_labels(ax, texts)
-
-    ax.set_xlabel("Mean log2 CPM+1")
-    ax.set_ylabel("Coefficient of Variation (CV)")
-    ax.legend(fontsize=8)
-    fig.colorbar(sc, ax=ax, fraction=0.03, pad=0.02).set_label("Local density", fontsize=8)
-    add_data_note(ax, data_note)
-
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    save_fig(pdf, fig)
+def fig_pca_loadings(lcpm, genes_f, n_top):
+    """Top 15 genes contributing to PC1 and PC2 (loading bar chart)."""
+    n = lcpm.shape[0]
+    X = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    sel_genes = genes_f[np.argsort(lcpm.var(axis=0))[-n_top:]]
+    nc = min(n, X.shape[1], 10)
+    if nc < 2:
+        return None
+    p = PCA(n_components=nc); p.fit(X)
+    comp = p.components_          # nc × n_top
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=["Top 15 genes driving PC1",
+                                        "Top 15 genes driving PC2"],
+                        horizontal_spacing=0.12)
+    for pc_idx, col in enumerate([1, 2], start=1):
+        loadings = comp[pc_idx - 1]              # n_top values
+        top15    = np.argsort(np.abs(loadings))[-15:][::-1]
+        gnames   = [sel_genes[i] for i in top15]
+        lvals    = [float(loadings[i]) for i in top15]
+        colors_bar = ["#d62728" if v > 0 else "#1f77b4" for v in lvals]
+        fig.add_trace(go.Bar(
+            x=lvals[::-1], y=gnames[::-1], orientation="h",
+            marker_color=colors_bar[::-1],
+            hovertemplate="<b>%{y}</b><br>Loading = %{x:.4f}<extra></extra>",
+            showlegend=False,
+        ), row=1, col=col)
+        fig.update_xaxes(title_text="Loading", row=1, col=col)
+        fig.update_yaxes(tickfont_size=9, row=1, col=col)
+    base(fig, f"PCA Loadings — top 15 genes contributing to PC1 and PC2 "
+              f"(top {n_top} variable genes; red = positive, blue = negative loading)", 480)
+    return fig
 
 
-def plot_top_genes_table(pdf, colnames, cpm, geneids, n_top_genes=20):
-    """Page 11 — top N most highly expressed genes."""
-    n         = len(colnames)
-    data_note = f"Data: CPM-filtered genes, linear CPM (top {n_top_genes} by mean CPM)"
-    mean_cpm  = cpm.mean(axis=1)
-    top_idx   = np.argsort(mean_cpm)[::-1][:n_top_genes]
-    top_genes = geneids[top_idx]
-    top_mean  = mean_cpm[top_idx]
-    top_pct   = top_mean / (mean_cpm.sum() + 1e-9) * 100
-    top_cpm_m = cpm[top_idx, :]
-
-    # Per-sample columns only if they fit
-    MAX_SAMPLE_COLS = min(n, 8)
-    show_cols       = list(colnames[:MAX_SAMPLE_COLS])
-    truncated       = n > MAX_SAMPLE_COLS
-
-    col_labels = ["Rank", "Gene", "Mean CPM", "% of total"] + show_cols
-    if truncated:
-        col_labels[-1] = col_labels[-1] + f" ... (+{n - MAX_SAMPLE_COLS} more)"
-
-    cell_data = []
-    for rank, (gene, mn, pct, row) in enumerate(
-            zip(top_genes, top_mean, top_pct, top_cpm_m), start=1):
-        cell_data.append(
-            [str(rank), gene, f"{mn:.1f}", f"{pct:.2f}%"]
-            + [f"{v:.0f}" for v in row[:MAX_SAMPLE_COLS]]
+def fig_sample_scatter_pairs(names, lcpm, colors):
+    """Log₂ CPM scatter for all pairs — only shown for n ≤ 6 samples."""
+    n = len(names)
+    if n > 6:
+        return None
+    pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    if not pairs:
+        return None
+    nc = min(3, len(pairs))
+    nr = int(np.ceil(len(pairs) / nc))
+    # Compute spacing so it never exceeds Plotly's 1/(rows-1) limit
+    v_space = min(0.08, 0.9 / max(nr - 1, 1))
+    h_space = min(0.08, 0.9 / max(nc - 1, 1))
+    titles  = [f"{names[i]} vs {names[j]}" for i, j in pairs]
+    titles += [""] * (nr * nc - len(pairs))
+    fig = make_subplots(rows=nr, cols=nc, subplot_titles=titles,
+                        horizontal_spacing=h_space, vertical_spacing=v_space)
+    for idx, (i, j) in enumerate(pairs):
+        r, c = divmod(idx, nc)
+        xi = lcpm[i].tolist(); xj = lcpm[j].tolist()
+        r_val = float(np.corrcoef(lcpm[i], lcpm[j])[0, 1])
+        fig.add_trace(go.Scatter(
+            x=xi, y=xj, mode="markers",
+            marker=dict(size=3, opacity=0.4, color="#555"),
+            hovertemplate=f"{names[i]}=%{{x:.2f}}<br>{names[j]}=%{{y:.2f}}<extra></extra>",
+            showlegend=False,
+        ), row=r + 1, col=c + 1)
+        mn = min(min(xi), min(xj)); mx = max(max(xi), max(xj))
+        fig.add_trace(go.Scatter(x=[mn, mx], y=[mn, mx], mode="lines",
+                                 line=dict(color="red", width=1, dash="dot"),
+                                 showlegend=False), row=r + 1, col=c + 1)
+        # r annotation inside the panel (no paper coords to avoid crowding)
+        fig.add_annotation(
+            text=f"r={r_val:.3f}", x=mx, y=mn,
+            xref=f"x{idx+1}" if idx > 0 else "x",
+            yref=f"y{idx+1}" if idx > 0 else "y",
+            showarrow=False, font_size=9, xanchor="right", yanchor="bottom",
+            bgcolor="rgba(255,255,255,0.7)", borderpad=2,
         )
-
-    n_rows  = len(cell_data)
-    fig_h   = max(5, n_rows * 0.32 + 2.5)
-    n_cols_t = len(col_labels)
-    fig_w   = min(20, max(8, n_cols_t * 1.4))
-
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    ax.axis("off")
-    add_page_title(fig, f"Top {n_top_genes} Most Highly Expressed Genes",
-                   "Ranked by mean CPM across all samples (CPM-filtered). "
-                   "High % of total from a single gene may indicate contamination. "
-                   + (f"Per-sample CPM shown for first {MAX_SAMPLE_COLS} samples." if truncated else ""))
-
-    table = ax.table(cellText=cell_data, colLabels=col_labels,
-                     loc="center", cellLoc="center")
-    table.auto_set_font_size(False)
-    fs = max(5, min(8, int(72 / max(n_cols_t, 6))))
-    table.set_fontsize(fs)
-    table.scale(1, max(1.2, 1.5 - n_rows * 0.01))
-    table.auto_set_column_width(list(range(n_cols_t)))
-
-    for (r, c), cell in table.get_celld().items():
-        if r == 0:
-            cell.set_facecolor(BLUE)
-            cell.set_text_props(color="white", fontweight="bold")
-            cell.set_edgecolor(DIVIDER)
-        else:
-            gene_pct = top_pct[r - 1] if r <= n_rows else 0
-            if gene_pct > 5.0:
-                cell.set_facecolor("#FDECEA")
-            elif r % 2 == 0:
-                cell.set_facecolor("#E8EEF5")
-            else:
-                cell.set_facecolor("white")
-            cell.set_edgecolor(DIVIDER)
-
-    fig.text(0.05, 0.01,
-             "Light red rows: gene accounts for > 5% of total mean CPM.",
-             fontsize=7, color="#AA2200", style="italic")
-    fig.text(0.99, 0.01, data_note, ha="right", va="bottom",
-             fontsize=7, color=GREY, style="italic")
-
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    save_fig(pdf, fig)
+        fig.update_xaxes(title_text="log₂ CPM+1", row=r + 1, col=c + 1)
+        fig.update_yaxes(title_text="log₂ CPM+1", row=r + 1, col=c + 1)
+    base(fig, f"Pairwise Sample Scatter — log₂(CPM+1), all {len(pairs)} pairs "
+              f"(red dashed = perfect agreement; r = Pearson correlation; "
+              f"CPM-filtered genes; shown only for n ≤ 6 samples)",
+         max(350, nr * 300))
+    return fig
 
 
-def plot_consensus_clustering(pdf, colnames, lcpm, sample_colors, n_top, run_warnings):
-    """Page 12 — unsupervised group estimation via consensus clustering."""
-    n     = len(colnames)
+def html_silhouette_table(names, lcpm, n_top):
+    """HTML table of silhouette scores for k=2..min(6,n-1) using Ward groups."""
+    from sklearn.metrics import silhouette_score
+    n     = len(names)
     max_k = min(6, n - 1)
-
     if max_k < 2:
-        run_warnings.append(
-            "Consensus clustering requires at least 3 samples — skipping.")
-        return
+        return ""
+    X     = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    rows  = ""
+    best  = -1; best_k = 2
+    try:
+        link = linkage(pdist(X, metric="euclidean"), method="ward")
+    except Exception:
+        return ""
+    for k in range(2, max_k + 1):
+        try:
+            labs = fcluster(link, k, criterion="maxclust") - 1
+            if len(np.unique(labs)) < 2:
+                continue
+            sil  = float(silhouette_score(X, labs))
+            if sil > best:
+                best = sil; best_k = k
+        except Exception:
+            sil = float("nan")
+        rows += f"<tr{'style=\"background:#e8f4e8\"' if k==best_k else ''}>" \
+                f"<td style='text-align:center'>{k}</td>" \
+                f"<td style='text-align:center'>{sil:.3f}</td>" \
+                f"<td style='text-align:center'>{'★ best' if k==best_k else ''}</td></tr>"
+    if not rows:
+        return ""
+    return f"""<div style="margin-top:10px">
+<p style="font-size:11px;color:#555;margin-bottom:6px">
+  Silhouette score (−1..1) measures cluster cohesion vs separation.
+  Higher = better-separated groups. Computed on Ward hierarchical groups
+  (top {n_top} variable genes).
+</p>
+<table style="border-collapse:collapse;font-size:12px;width:280px">
+  <thead><tr style="background:#336699;color:white">
+    <th style="padding:6px 16px">k</th>
+    <th style="padding:6px 16px">Silhouette score</th>
+    <th style="padding:6px 16px">Note</th>
+  </tr></thead>
+  <tbody>{rows}</tbody>
+</table></div>"""
 
-    gene_vars = lcpm.var(axis=0)
-    X         = lcpm[:, np.argsort(gene_vars)[-n_top:]]
-    data_note = f"Data: top {n_top} most variable genes (log2 CPM+1, CPM-filtered)"
-    N_ITER    = 100
-    K_RANGE   = range(2, max_k + 1)
-    seeds     = np.random.default_rng(42).integers(0, 100_000, size=N_ITER)
 
-    # ── Build co-occurrence matrices ─────────────────────────────────────────
-    cooc   = {}
-    labels = {}
+def fig_umap_sample(names, lcpm, n_top, colors, run_warnings):
+    """UMAP (or PCA fallback) coloured by sample identity."""
+    n = len(names)
+    X = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    try:
+        from umap import UMAP
+        emb = UMAP(n_components=2, n_neighbors=max(2, min(15, n - 1)),
+                   min_dist=0.3, random_state=42, verbose=False).fit_transform(X)
+        elbl = "UMAP"
+    except Exception as e:
+        run_warnings.append(f"UMAP unavailable ({e}), using PCA.")
+        emb = PCA(n_components=2).fit_transform(X)
+        elbl = "PC"
+    mode = "markers+text" if n <= 30 else "markers"
+    fig = go.Figure()
+    for i, s in enumerate(names):
+        fig.add_trace(go.Scatter(
+            x=[float(emb[i, 0])], y=[float(emb[i, 1])], mode=mode, name=s,
+            text=[s] if n <= 30 else None, textposition="top center", textfont_size=8,
+            marker=dict(color=colors[s], size=9, line=dict(color="white", width=1)),
+            hovertemplate=f"<b>{s}</b><br>{elbl}1=%{{x:.2f}}<br>{elbl}2=%{{y:.2f}}<extra></extra>",
+            showlegend=(n <= 25),
+        ))
+    base(fig, f"{elbl} Embedding — coloured by sample "
+              f"(top {n_top} variable genes, log₂ CPM+1, CPM-filtered)",
+         max(500, n * 7 + 160))
+    fig.update_layout(xaxis_title=f"{elbl} 1", yaxis_title=f"{elbl} 2")
+    return fig, emb, elbl
+
+def fig_ma(names, lcpm):
+    """MA plots vs pseudo-bulk mean. Only for n ≤ 12."""
+    n, ref = len(names), lcpm.mean(axis=0)
+    nc, nr = min(3, n), int(np.ceil(n / min(3, n)))
+    titles = list(names) + [""] * (nr * nc - n)
+    fig = make_subplots(rows=nr, cols=nc, subplot_titles=titles,
+                        horizontal_spacing=0.06, vertical_spacing=0.12)
+    for idx, s in enumerate(names):
+        r, c = divmod(idx, nc)
+        A = ((lcpm[idx] + ref) / 2).tolist()
+        M = (lcpm[idx] - ref)
+        mm, ms = float(M.mean()), float(M.std())
+        try:
+            stk = np.vstack([A, M.tolist()])
+            z = gaussian_kde(stk)(stk); o = z.argsort()
+            fig.add_trace(go.Scatter(
+                x=np.array(A)[o].tolist(), y=M[o].tolist(), mode="markers",
+                marker=dict(color=z[o].tolist(), colorscale="Viridis", size=3,
+                            opacity=0.6, showscale=False),
+                showlegend=False,
+                hovertemplate="A=%{x:.2f}<br>M=%{y:.2f}<extra></extra>",
+            ), row=r + 1, col=c + 1)
+        except Exception:
+            fig.add_trace(go.Scatter(x=A, y=M.tolist(), mode="markers",
+                                     marker=dict(size=3, opacity=0.4),
+                                     showlegend=False), row=r + 1, col=c + 1)
+        for val, cl, dash in [(0, "red", "dash"), (mm, "green", "solid"),
+                               (mm + ms, "green", "dot"), (mm - ms, "green", "dot")]:
+            fig.add_hline(y=val, line_color=cl, line_dash=dash,
+                          line_width=1.2, row=r + 1, col=c + 1)
+    base(fig, "MA Plots — each sample vs pseudo-bulk mean "
+              "(red dashed = M=0, green = mean M ±1 SD; CPM-filtered genes)", nr * 290)
+    return fig
+
+# ── Section 4: Gene Analysis ──────────────────────────────────────────────────
+
+def fig_mean_cv(lcpm, genes_f, n_filt):
+    G = lcpm.T; mu = G.mean(axis=1); cv = G.std(axis=1) / (mu + 1e-9)
+    bins = np.array_split(np.argsort(mu), 30)
+    bx = np.array([mu[b].mean() for b in bins])
+    by = np.array([np.median(cv[b]) for b in bins])
+    exp = mu > 1
+    top = (np.where(exp)[0][np.argsort(cv[exp])[-20:]]
+           if exp.sum() >= 20 else np.argsort(cv)[-20:])
+    try:
+        z = gaussian_kde(np.vstack([mu, cv]))(np.vstack([mu, cv]))
+    except Exception:
+        z = np.ones(len(mu))
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=mu.tolist(), y=cv.tolist(), mode="markers",
+        marker=dict(color=z.tolist(), colorscale="Viridis", size=3, opacity=0.5,
+                    showscale=True, colorbar=dict(title="Density", thickness=12)),
+        text=list(genes_f), showlegend=False,
+        hovertemplate="<b>%{text}</b><br>Mean log₂ CPM=%{x:.2f}<br>CV=%{y:.3f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(x=bx.tolist(), y=by.tolist(), mode="lines",
+                             name="Running median CV", line_width=2))
+    fig.add_trace(go.Scatter(
+        x=mu[top].tolist(), y=cv[top].tolist(), mode="markers+text",
+        text=list(genes_f[top]), textposition="top right", textfont_size=8,
+        marker=dict(size=7, symbol="diamond", color="red"),
+        name="Top 20 high-CV genes",
+        hovertemplate="<b>%{text}</b><br>Mean=%{x:.2f}<br>CV=%{y:.3f}<extra></extra>",
+    ))
+    base(fig, f"Mean Expression vs Coefficient of Variation — "
+              f"CPM-filtered genes (n={n_filt}); top 20 high-CV genes labelled (mean > 1)", 530)
+    fig.update_layout(xaxis_title="Mean log₂(CPM+1)", yaxis_title="CV (std/mean)")
+    return fig
+
+
+def html_top_genes_table(names, cpm_f, genes_f, n_top=20):
+    """
+    Sortable, searchable HTML table of top expressed genes — all samples shown.
+    Returns a raw HTML string (embedded directly, not a Plotly figure).
+    """
+    mu    = cpm_f.mean(axis=1)
+    idx   = np.argsort(mu)[::-1][:n_top]
+    tg    = genes_f[idx]; tm = mu[idx]
+    tp    = tm / (mu.sum() + 1e-9) * 100
+    tc    = cpm_f[idx, :]
+
+    hdrs = ["#", "Gene ID", "Mean CPM", "% of total"] + list(names)
+    th   = "".join(f'<th onclick="sortTbl({i})">{h}</th>'
+                   for i, h in enumerate(hdrs))
+
+    rows = ""
+    for rank, (g, m, p, row) in enumerate(zip(tg, tm, tp, tc), 1):
+        bg = "background:#ffe8e8" if p > 5 else ("background:#f8f8f8" if rank % 2 == 0 else "")
+        st = f' style="{bg}"' if bg else ""
+        cells = (f'<td data-val="{rank}">{rank}</td>'
+                 f'<td style="font-weight:bold">{g}</td>'
+                 f'<td data-val="{m:.6f}">{m:.1f}</td>'
+                 f'<td data-val="{p:.8f}">{p:.2f}%</td>')
+        for v in row:
+            cells += f'<td data-val="{v:.4f}">{v:.0f}</td>'
+        rows += f'<tr{st}>{cells}</tr>\n'
+
+    return f"""
+<div style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+  <input id="gene-search" type="text" placeholder="Search gene or sample..."
+    style="padding:5px 10px;border:1px solid #ccc;border-radius:3px;
+           width:260px;font-size:12px"
+    oninput="searchGeneTable(this.value)">
+  <span style="color:#888;font-size:11px">
+    Click any column header to sort &nbsp;|&nbsp;
+    <span style="background:#ffe8e8;padding:2px 6px;border-radius:3px">red row</span>
+    = gene >5% of total mean CPM
+  </span>
+</div>
+<div style="overflow-x:auto;overflow-y:auto;max-height:540px;
+            border:1px solid #ddd;border-radius:3px">
+  <table id="top-genes-tbl"
+    style="border-collapse:collapse;font-size:11px;min-width:100%;white-space:nowrap">
+    <thead>
+      <tr style="background:#336699;color:white;cursor:pointer;
+                 position:sticky;top:0;z-index:2">{th}</tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>"""
+
+
+def fig_heatmap_with_dendro(names, lcpm, genes_f, n_filt):
+    """
+    Heatmap of top 500 variable genes with:
+      - sample dendrogram on the left (horizontal)
+      - genes ordered by clustering on the x-axis
+      - samples ordered by clustering on the y-axis
+    """
+    n     = len(names)
+    n_top = min(500, n_filt)
+
+    var_idx   = np.argsort(lcpm.var(axis=0))[-n_top:]
+    mat       = lcpm[:, var_idx]
+    sub_genes = genes_f[var_idx]
+
+    # Cluster genes
+    try:
+        gene_link  = linkage(pdist(mat.T, metric="euclidean"), method="ward")
+        gene_order = leaves_list(gene_link)
+    except Exception:
+        gene_order = np.arange(n_top)
+
+    # Cluster samples — keep dendrogram for drawing
+    try:
+        samp_link  = linkage(pdist(mat, metric="euclidean"), method="ward")
+        samp_order = leaves_list(samp_link)
+        samp_dend  = dendrogram(samp_link, labels=list(names), no_plot=True)
+    except Exception:
+        samp_order = np.arange(n)
+        samp_dend  = None
+
+    mat_ord   = mat[np.ix_(samp_order, gene_order)]
+    names_ord = [names[i] for i in samp_order]
+    genes_ord = [sub_genes[i] for i in gene_order]
+    mat_c     = mat_ord - mat_ord.mean(axis=0)   # centre per gene
+
+    # Two-column layout: narrow dendrogram | wide heatmap
+    fig = make_subplots(rows=1, cols=2,
+                        column_widths=[0.09, 0.91],
+                        horizontal_spacing=0.004)
+
+    # ── Sample dendrogram (horizontal: x=height, y=normalised position) ──────
+    # scipy positions leaves at 5, 15, 25 … → normalise to 0, 1, 2 …
+    if samp_dend:
+        for xs_raw, ys_h, col in zip(samp_dend["icoord"],
+                                      samp_dend["dcoord"],
+                                      samp_dend["color_list"]):
+            y_norm = [(p - 5) / 10 for p in xs_raw]
+            fig.add_trace(go.Scatter(
+                x=ys_h, y=y_norm, mode="lines",
+                line=dict(color=safe_color(col), width=1),
+                hoverinfo="skip", showlegend=False,
+            ), row=1, col=1)
+
+    # ── Heatmap ───────────────────────────────────────────────────────────────
+    tfs_y = max(6, 10 - n // 8)
+    tfs_x = max(4, 7 - n_top // 100)
+    fig.add_trace(go.Heatmap(
+        z=mat_c.tolist(),
+        x=genes_ord if n_top <= 60 else None,
+        y=names_ord,
+        colorscale="RdBu", reversescale=True, zmid=0,
+        colorbar=dict(title="Centred<br>log₂(CPM+1)", thickness=14),
+        hovertemplate="Sample: %{y}<br>Value: %{z:.2f}<extra></extra>",
+    ), row=1, col=2)
+
+    base(fig,
+         f"Heatmap — top {n_top} most variable genes "
+         f"(centred log₂ CPM+1; rows & columns ordered by Ward clustering; "
+         f"left panel = sample dendrogram)",
+         max(520, n * 20 + 130))
+
+    # Style dendrogram: reversed x (root at left, leaves touching heatmap),
+    # y range matches heatmap categorical positions 0 … n-1
+    fig.update_xaxes(autorange="reversed", showticklabels=False,
+                     showgrid=False, zeroline=False, row=1, col=1)
+    fig.update_yaxes(range=[-0.5, n - 0.5], showticklabels=False,
+                     showgrid=False, zeroline=False, row=1, col=1)
+
+    # Style heatmap
+    fig.update_xaxes(
+        title=dict(text="Genes (ordered by clustering)" if n_top > 60 else "Gene"),
+        showticklabels=(n_top <= 60),
+        tickangle=-45, tickfont_size=tfs_x,
+        row=1, col=2,
+    )
+    fig.update_yaxes(tickfont_size=tfs_y, row=1, col=2)
+
+    return fig
+
+# ── Section 5: Group Estimation ───────────────────────────────────────────────
+
+def _kmeans_on_embedding(names, lcpm, n_top, emb, elbl):
+    """k-means (k=2) on top-variable gene space, shown on existing embedding."""
+    n  = len(names)
+    X  = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    kl = KMeans(n_clusters=2, random_state=42, n_init=10).fit_predict(X)
+    GP = ["#1f77b4", "#d62728"]
+    mode = "markers+text" if n <= 30 else "markers"
+    fig = go.Figure()
+    for g in range(2):
+        idx = [i for i in range(n) if kl[i] == g]
+        fig.add_trace(go.Scatter(
+            x=[float(emb[i, 0]) for i in idx],
+            y=[float(emb[i, 1]) for i in idx],
+            mode=mode,
+            text=[names[i] for i in idx] if n <= 30 else None,
+            textposition="top center", textfont_size=8,
+            marker=dict(color=GP[g], size=9, line=dict(color="white", width=1)),
+            name=f"k-means cluster {g + 1}",
+            hovertemplate=("<b>%{text}</b><br>" if n <= 30 else "") +
+                          f"Cluster {g+1}<extra></extra>",
+        ))
+    base(fig, f"{elbl} Embedding — k-means clusters (k=2, "
+              f"top {n_top} variable genes; hover to identify samples)",
+         max(500, n * 7 + 160))
+    fig.update_layout(xaxis_title=f"{elbl} 1", yaxis_title=f"{elbl} 2")
+    return fig, kl
+
+
+def _hierarchical_k(link, max_k):
+    """Find optimal k from Ward dendrogram by the largest gap in merge heights."""
+    dists = link[:, 2]
+    # look at the last max_k merges (from the top of the tree)
+    top_dists = dists[-(max_k - 1):][::-1]   # decreasing order
+    if len(top_dists) < 2:
+        return 2
+    gaps = np.diff(top_dists) * -1            # positive where height drops fast
+    k    = int(np.argmax(gaps)) + 2           # gap[0] → k=2, gap[1] → k=3, …
+    return max(2, min(k, max_k))
+
+
+def figs_hierarchical_groups(names, lcpm, n_top):
+    """PCA + group table from hierarchical dendrogram auto-cut."""
+    n  = len(names)
+    if n < 3:
+        return None, None
+    X  = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    mk = min(6, n - 1)
+    try:
+        link = linkage(pdist(X, metric="euclidean"), method="ward")
+        k    = _hierarchical_k(link, mk)
+        kl   = fcluster(link, k, criterion="maxclust") - 1   # 0-indexed
+    except Exception as e:
+        warn(f"Hierarchical groups: {e}"); return None, None
+
+    GP = ["#1f77b4","#d62728","#2ca02c","#ff7f0e","#9467bd","#8c564b"]
+    try:
+        emb  = PCA(n_components=2).fit_transform(X)
+        pct2 = PCA(n_components=2).fit(X).explained_variance_ratio_ * 100
+    except Exception:
+        return None, None
+
+    mode = "markers+text" if n <= 30 else "markers"
+    fig_p = go.Figure()
+    for g in range(k):
+        idx = [i for i in range(n) if kl[i] == g]
+        fig_p.add_trace(go.Scatter(
+            x=[float(emb[i, 0]) for i in idx],
+            y=[float(emb[i, 1]) for i in idx],
+            mode=mode,
+            text=[names[i] for i in idx] if n <= 30 else None,
+            textposition="top center", textfont_size=8,
+            marker=dict(color=GP[g % len(GP)], size=10,
+                        line=dict(color="white", width=1)),
+            name=f"Group {g + 1}",
+            hovertemplate=("<b>%{text}</b><br>" if n <= 30 else "") +
+                          f"Group {g+1}<extra></extra>",
+        ))
+    base(fig_p, f"PCA — hierarchical groups (k={k}, automatic dendrogram cut at largest gap; "
+                f"top {n_top} variable genes, log₂ CPM+1)",
+         max(480, n * 7 + 160))
+    fig_p.update_layout(xaxis_title=f"PC1 ({pct2[0]:.1f}%)",
+                        yaxis_title=f"PC2 ({pct2[1]:.1f}%)")
+
+    grp = [[f"Group {g+1}", f"{int(sum(kl==g))}",
+             ", ".join(names[i] for i in range(n) if kl[i] == g)]
+            for g in range(k)]
+    fig_t = go.Figure(go.Table(
+        header=dict(values=["<b>Group</b>", "<b>n samples</b>", "<b>Members</b>"],
+                    fill_color="#336699", font=dict(color="white", size=11),
+                    align="center", height=30),
+        cells=dict(values=[[r[0] for r in grp], [r[1] for r in grp],
+                            [r[2] for r in grp]],
+                   fill_color=[["#f5f5f5" if i % 2 == 0 else "white"
+                                 for i in range(k)]] * 3,
+                   font_size=10, height=26, align=["center", "center", "left"]),
+    ))
+    base(fig_t, f"Hierarchical Group Assignments — k={k}, Ward linkage, "
+                f"automatic cut at largest inter-cluster distance gap",
+         max(200, k * 44 + 130))
+    fig_t.update_layout(margin=dict(l=20, r=20, t=60, b=20))
+    return fig_p, fig_t
+
+
+def figs_consensus(names, lcpm, n_top, run_warnings):
+    n     = len(names)
+    max_k = min(6, n - 1)
+    if max_k < 2:
+        run_warnings.append("Consensus clustering needs ≥ 3 samples.")
+        return {}
+
+    X       = lcpm[:, np.argsort(lcpm.var(axis=0))[-n_top:]]
+    N_ITER  = 100
+    seeds   = np.random.default_rng(42).integers(0, 100_000, N_ITER)
+    K_RANGE = range(2, max_k + 1)
+
+    cooc, labs = {}, {}
     for k in K_RANGE:
-        M = np.zeros((n, n), dtype=float)
+        M = np.zeros((n, n))
         for seed in seeds:
             try:
-                lab = KMeans(n_clusters=k, random_state=int(seed),
-                             n_init=1, max_iter=100).fit_predict(X)
+                l = KMeans(n_clusters=k, random_state=int(seed),
+                           n_init=1, max_iter=100).fit_predict(X)
                 for i in range(n):
                     for j in range(n):
-                        if lab[i] == lab[j]:
-                            M[i, j] += 1
+                        if l[i] == l[j]: M[i, j] += 1
             except Exception:
                 pass
-        M       /= N_ITER
-        cooc[k]  = M
+        M /= N_ITER; cooc[k] = M
         try:
-            labels[k] = KMeans(n_clusters=k, random_state=42,
-                                n_init=20).fit_predict(M)
+            labs[k] = KMeans(n_clusters=k, random_state=42, n_init=20).fit_predict(M)
         except Exception:
-            labels[k] = np.zeros(n, dtype=int)
+            labs[k] = np.zeros(n, dtype=int)
 
-    # ── Choose best k via CDF-area delta ────────────────────────────────────
-    cdf_areas = {k: float(np.mean(cooc[k][np.triu_indices(n, k=1)]))
-                 for k in K_RANGE}
-    k_list    = sorted(K_RANGE)
-    deltas    = {k_list[i]: cdf_areas[k_list[i]] - cdf_areas[k_list[i - 1]]
-                 for i in range(1, len(k_list))}
-    best_k    = max(deltas, key=deltas.get) if deltas else 2
-    best_lbl  = labels[best_k]
+    areas  = {k: float(np.mean(cooc[k][np.triu_indices(n, k=1)])) for k in K_RANGE}
+    klist  = sorted(K_RANGE)
+    deltas = {klist[i]: areas[klist[i]] - areas[klist[i - 1]] for i in range(1, len(klist))}
+    best_k = max(deltas, key=deltas.get) if deltas else 2
+    best_l = labs[best_k]
 
-    order      = np.argsort(best_lbl)
-    names_ord  = [colnames[i] for i in order]
-    cooc_ord   = cooc[best_k][np.ix_(order, order)]
-    cp         = sns.color_palette("Set2", n_colors=best_k)
+    order    = np.argsort(best_l)
+    nms      = [names[i] for i in order]
+    co_ord   = cooc[best_k][np.ix_(order, order)]
+    tfs      = max(6, 10 - n // 8)
+    ann      = [[f"{co_ord[i,j]:.2f}" for j in range(n)] for i in range(n)] if n <= 40 else None
+    shapes   = []
+    for b in np.where(np.diff(best_l[order]))[0] + 1:
+        for kw in [{"x0": b-.5,"x1": b-.5,"y0": -.5,"y1": n-.5},
+                   {"y0": b-.5,"y1": b-.5,"x0": -.5,"x1": n-.5}]:
+            shapes.append(dict(type="line", line=dict(color="red", width=2),
+                               layer="above", **kw))
 
-    # ── Tick font sizes for heatmaps ─────────────────────────────────────────
-    fs_heat      = heatmap_tick_fontsize(n)
-    fs_heat_sm   = max(0, fs_heat - 1)   # smaller for the bottom-row thumbnails
+    # Co-occurrence heatmap
+    fig_c = go.Figure(go.Heatmap(
+        z=co_ord.tolist(), x=nms, y=nms,
+        text=ann, texttemplate="%{text}" if ann else None,
+        textfont_size=max(5, tfs - 2),
+        colorscale="Blues", zmin=0, zmax=1,
+        colorbar=dict(title="Co-occurrence", thickness=14),
+        hovertemplate="<b>%{x}</b> vs <b>%{y}</b><br>co-occurrence = %{z:.3f}<extra></extra>",
+    ))
+    base(fig_c, f"Consensus Co-occurrence Matrix — best k={best_k} "
+                f"({N_ITER} iterations, top {n_top} variable genes; "
+                f"red lines = cluster boundaries)", max(480, n * 22 + 120))
+    fig_c.update_layout(shapes=shapes,
+                        xaxis=dict(tickangle=-45, tickfont_size=tfs),
+                        yaxis=dict(tickfont_size=tfs, autorange="reversed"))
 
-    # ── Figure ───────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(16, 10))
-    add_page_title(
-        fig,
-        f"Consensus Clustering — Estimated Groups (best k={best_k})",
-        f"k-means run {N_ITER}x per k=2..{max_k}.  "
-        f"Co-occurrence = fraction of runs two samples share a cluster.  "
-        f"Best k = largest CDF-area increase.  No prior group info used.")
-
-    gs = gridspec.GridSpec(2, 3, figure=fig,
-                           hspace=0.50, wspace=0.40,
-                           top=0.88, bottom=0.10, left=0.07, right=0.97)
-
-    # ── Panel A: co-occurrence heatmap (best k) ──────────────────────────────
-    ax_h = fig.add_subplot(gs[0, 0])
-    im   = ax_h.imshow(cooc_ord, cmap="Blues", vmin=0, vmax=1, aspect="auto")
-    apply_heatmap_ticks(ax_h, names_ord)
-    ax_h.set_title(f"Co-occurrence matrix (k={best_k})", fontweight="bold", fontsize=9)
-    # Cell annotations only if large enough
-    if n <= 25:
-        for i in range(n):
-            for j in range(n):
-                v = cooc_ord[i, j]
-                ax_h.text(j, i, f"{v:.2f}", ha="center", va="center",
-                          fontsize=max(4, 5 - n // 10),
-                          color="white" if v > 0.6 else "black")
-    # Cluster boundaries
-    for b in np.where(np.diff(best_lbl[order]))[0] + 1:
-        ax_h.axhline(b - 0.5, color=RED, linewidth=1.2)
-        ax_h.axvline(b - 0.5, color=RED, linewidth=1.2)
-    fig.colorbar(im, ax=ax_h, fraction=0.046, pad=0.04).set_label(
-        "Co-occurrence", fontsize=7)
-    add_data_note(ax_h, data_note)
-
-    # ── Panel B: stability bar chart ─────────────────────────────────────────
-    ax_s = fig.add_subplot(gs[0, 1])
-    ks   = sorted(cdf_areas.keys())
-    ax_s.bar(ks, [cdf_areas[k] for k in ks],
-             color=[RED if k == best_k else BLUE for k in ks],
-             edgecolor="white", zorder=3, alpha=0.85)
-    ax_s.set_xticks(ks)
-    ax_s.set_xlabel("k", fontsize=9)
-    ax_s.set_ylabel("Mean co-occurrence (CDF area)", fontsize=8)
-    ax_s.set_title("Stability per k  (red = chosen)", fontweight="bold", fontsize=9)
-    ax_s.yaxis.grid(True, zorder=0)
-    ax_s.set_axisbelow(True)
+    # Stability chart
+    ks     = sorted(areas.keys())
+    fig_s  = make_subplots(specs=[[{"secondary_y": True}]])
+    fig_s.add_trace(go.Bar(
+        x=ks, y=[areas[k] for k in ks],
+        marker_color=["red" if k == best_k else "#336699" for k in ks],
+        name="CDF area",
+        hovertemplate="k=%{x}<br>CDF area=%{y:.3f}<extra></extra>",
+    ))
     if deltas:
-        ax_d = ax_s.twinx()
-        dk   = sorted(deltas.keys())
-        ax_d.plot(dk, [deltas[k] for k in dk], color=GREEN, marker="o",
-                  markersize=5, linewidth=1.4, label="Delta")
-        ax_d.set_ylabel("Delta CDF area", fontsize=8, color=GREEN)
-        ax_d.tick_params(axis="y", colors=GREEN, labelsize=7)
+        dk = sorted(deltas)
+        fig_s.add_trace(go.Scatter(
+            x=dk, y=[deltas[k] for k in dk], mode="lines+markers",
+            name="Delta", line_color="green", marker_size=7,
+            hovertemplate="k=%{x}<br>Δ=%{y:.4f}<extra></extra>",
+        ), secondary_y=True)
+    base(fig_s, f"Consensus Clustering Stability — CDF area per k "
+                f"(red = chosen k={best_k}; green = delta between adjacent k)", 390)
+    fig_s.update_layout(
+        xaxis=dict(title="k (number of clusters)", tickvals=ks),
+        yaxis=dict(title="Mean co-occurrence (CDF area)"),
+        yaxis2=dict(
+            title=dict(text="Delta CDF area", font=dict(color="green")),
+            overlaying="y", side="right",
+            tickfont=dict(color="green"),
+        ),
+    )
 
-    # ── Panel C: PCA coloured by consensus group ─────────────────────────────
-    ax_p = fig.add_subplot(gs[0, 2])
+    # PCA coloured by consensus group
+    GP = ["#1f77b4","#d62728","#2ca02c","#ff7f0e","#9467bd","#8c564b"]
+    fig_p = None
     try:
-        emb    = PCA(n_components=2).fit_transform(X)
-        pct_p  = PCA(n_components=2).fit(X).explained_variance_ratio_ * 100
-        c_cols = {s: cp[best_lbl[i]] for i, s in enumerate(colnames)}
-        scatter_with_labels(ax_p, emb[:, 0], emb[:, 1], colnames, c_cols, s=60)
-        ax_p.legend(handles=[Patch(facecolor=cp[k], label=f"Group {k+1}")
-                              for k in range(best_k)],
-                    fontsize=8, framealpha=0.8)
-        ax_p.set_xlabel(f"PC1 ({pct_p[0]:.1f}%)", fontsize=9)
-        ax_p.set_ylabel(f"PC2 ({pct_p[1]:.1f}%)", fontsize=9)
-        ax_p.set_title("PCA — consensus groups", fontweight="bold", fontsize=9)
-        ax_p.axhline(0, color=DIVIDER, linewidth=0.5)
-        ax_p.axvline(0, color=DIVIDER, linewidth=0.5)
+        emb  = PCA(n_components=2).fit_transform(X)
+        pct2 = PCA(n_components=2).fit(X).explained_variance_ratio_ * 100
+        mode = "markers+text" if n <= 30 else "markers"
+        fig_p = go.Figure()
+        for g in range(best_k):
+            idx = [i for i in range(n) if best_l[i] == g]
+            fig_p.add_trace(go.Scatter(
+                x=[float(emb[i, 0]) for i in idx],
+                y=[float(emb[i, 1]) for i in idx],
+                mode=mode,
+                text=[names[i] for i in idx] if n <= 30 else None,
+                textposition="top center", textfont_size=8,
+                marker=dict(color=GP[g % len(GP)], size=10,
+                            line=dict(color="white", width=1)),
+                name=f"Consensus group {g + 1}",
+                hovertemplate=("<b>%{text}</b><br>" if n <= 30 else "") +
+                              f"Group {g+1}<extra></extra>",
+            ))
+        base(fig_p, f"PCA — samples coloured by consensus group (k={best_k})",
+             max(480, n * 7 + 160))
+        fig_p.update_layout(xaxis_title=f"PC1 ({pct2[0]:.1f}%)",
+                            yaxis_title=f"PC2 ({pct2[1]:.1f}%)")
     except Exception as e:
-        run_warnings.append(f"PCA panel in consensus plot failed: {e}")
-        ax_p.set_visible(False)
-    add_data_note(ax_p, data_note)
+        run_warnings.append(f"Consensus PCA: {e}")
 
-    # ── Bottom row: co-occurrence thumbnails for other k values ──────────────
-    other_ks = [k for k in K_RANGE if k != best_k]
-    for idx in range(3):
-        ax_t = fig.add_subplot(gs[1, idx])
-        if idx < len(other_ks):
-            k       = other_ks[idx]
-            ord_k   = np.argsort(labels[k])
-            cooc_k  = cooc[k][np.ix_(ord_k, ord_k)]
-            nms_k   = [colnames[i] for i in ord_k]
-            ax_t.imshow(cooc_k, cmap="Blues", vmin=0, vmax=1, aspect="auto")
-            apply_heatmap_ticks(ax_t, nms_k)
-            ax_t.set_title(f"Co-occurrence k={k}", fontweight="bold", fontsize=9)
-            for b in np.where(np.diff(labels[k][ord_k]))[0] + 1:
-                ax_t.axhline(b - 0.5, color=RED, linewidth=1.0)
-                ax_t.axvline(b - 0.5, color=RED, linewidth=1.0)
-        else:
-            ax_t.set_visible(False)
+    # Group assignment table
+    grp = [[f"Group {g+1}", f"{int(sum(best_l==g))}",
+             ", ".join(names[i] for i in range(n) if best_l[i] == g)]
+            for g in range(best_k)]
+    fig_g = go.Figure(go.Table(
+        header=dict(values=["<b>Group</b>", "<b>n samples</b>", "<b>Members</b>"],
+                    fill_color="#336699", font=dict(color="white", size=11),
+                    align="center", height=30),
+        cells=dict(values=[[r[0] for r in grp], [r[1] for r in grp],
+                            [r[2] for r in grp]],
+                   fill_color=[["#f5f5f5" if i % 2 == 0 else "white"
+                                 for i in range(best_k)]] * 3,
+                   font_size=10, height=26, align=["center", "center", "left"]),
+    ))
+    base(fig_g, f"Estimated Group Assignments — consensus k={best_k}, "
+                f"no prior label information used",
+         max(200, best_k * 44 + 130))
+    fig_g.update_layout(margin=dict(l=20, r=20, t=60, b=20))
 
-    # ── Group assignment summary text ─────────────────────────────────────────
-    # Wrap long member lists so they don't run off the page
-    max_chars   = 110
-    group_lines = [f"Estimated groups (best k={best_k}):"]
-    for g in range(best_k):
-        members = [colnames[i] for i in range(n) if best_lbl[i] == g]
-        line    = f"  Group {g+1}: {', '.join(members)}"
-        # Hard-wrap if too long
-        if len(line) > max_chars:
-            line = f"  Group {g+1}: {', '.join(members[:len(members)//2])},\n" \
-                   f"          {', '.join(members[len(members)//2:])}"
-        group_lines.append(line)
+    return {"cooc": fig_c, "stab": fig_s, "pca": fig_p, "grp": fig_g,
+            "best_k": best_k, "grp_labels": best_l}
 
-    fig.text(0.01, 0.005, "\n".join(group_lines),
-             fontsize=7, family="monospace", color="#222222", va="bottom")
+# ══════════════════════════════════════════════════════════════════════════════
+# HTML TEMPLATE
+# ══════════════════════════════════════════════════════════════════════════════
 
-    save_fig(pdf, fig)
+HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RNA-seq QC Report</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;color:#222;background:#f4f4f4}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:200px;background:#fff;
+  border-right:1px solid #ddd;overflow-y:auto;padding:14px 0}
+.sidebar h1{font-size:13px;font-weight:bold;padding:0 14px 10px;
+  border-bottom:1px solid #eee;line-height:1.4}
+.nav-group{margin-top:10px}
+.nav-label{font-size:10px;font-weight:bold;text-transform:uppercase;
+  letter-spacing:.05em;color:#888;padding:0 14px 4px}
+.nav-item{display:block;padding:5px 14px;font-size:12px;color:#444;
+  text-decoration:none;border-left:3px solid transparent}
+.nav-item:hover{background:#f0f0f0;color:#000}
+.nav-item.active{border-left-color:#336699;color:#336699;font-weight:bold}
+.sidebar-footer{padding:12px 14px;font-size:10px;color:#aaa;
+  border-top:1px solid #eee;margin-top:14px;line-height:1.7}
+.main{margin-left:200px;padding:20px 28px 60px;max-width:1400px}
+.section{padding-top:36px}
+.sec-title{font-size:16px;font-weight:bold;border-bottom:2px solid #336699;
+  padding-bottom:6px;margin-bottom:4px}
+.sec-desc{color:#555;font-size:12px;margin-bottom:14px;max-width:840px;line-height:1.5}
+.card{background:#fff;border:1px solid #ddd;border-radius:4px;
+  margin-bottom:16px;padding:14px}
+.card-title{font-size:12px;font-weight:bold;color:#336699;margin-bottom:3px}
+.card-note{font-size:11px;color:#777;margin-bottom:10px}
+.stats-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.stat{background:#fff;border:1px solid #ddd;border-radius:4px;
+  padding:8px 14px;min-width:120px}
+.stat-label{font-size:10px;text-transform:uppercase;color:#888;margin-bottom:2px}
+.stat-val{font-size:18px;font-weight:bold;color:#336699}
+.stat-sub{font-size:10px;color:#aaa;margin-top:1px}
+table.qc{width:100%;border-collapse:collapse;font-size:11px}
+table.qc th{background:#336699;color:white;padding:7px 10px;text-align:left}
+table.qc td{padding:6px 10px;border-bottom:1px solid #eee}
+table.qc tr:nth-child(even) td{background:#f7f7f7}
+table.qc tr:hover td{background:#eef4ff}
+.warn{background:#fff8f0;border:1px solid #f5c06a;border-radius:4px;
+  padding:10px 14px;margin-top:10px;font-size:11px;color:#8a5000}
+.warn strong{display:block;margin-bottom:4px}
+#top-genes-tbl th{cursor:pointer;user-select:none}
+#top-genes-tbl th:hover{background:#2a5580}
+hr.div{border:none;border-top:1px solid #ddd;margin:40px 0 0}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <h1>RNA-seq QC<br>Report</h1>
+  __NAV__
+  <div class="sidebar-footer">
+    __TS__<br>__INPUT__<br>
+    __NS__ samples<br>__NGR__ genes (raw)<br>__NGF__ genes (filtered)
+  </div>
+</aside>
+<main class="main">__CONTENT__</main>
+<script>
+// ── Plotly rendering ──
+const plots = __PLOTS__;
+Object.entries(plots).forEach(([id,js]) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const s = JSON.parse(js);
+  Plotly.newPlot(el, s.data, s.layout, {
+    responsive:true, displayModeBar:true,
+    modeBarButtonsToRemove:['lasso2d','select2d','autoScale2d'],
+    toImageButtonOptions:{format:'svg',filename:id},
+  });
+});
 
+// ── Sidebar scroll-spy ──
+const secs = document.querySelectorAll('.section[id]');
+const navs = document.querySelectorAll('.nav-item');
+new IntersectionObserver(es => {
+  es.forEach(e => { if (e.isIntersecting)
+    navs.forEach(a => a.classList.toggle('active',
+      a.getAttribute('href')==='#'+e.target.id));
+  });
+},{ rootMargin:'-20% 0px -70% 0px' }).observe
+&& secs.forEach(s =>
+  new IntersectionObserver(es => {
+    if (es[0].isIntersecting)
+      navs.forEach(a => a.classList.toggle('active',
+        a.getAttribute('href')==='#'+es[0].target.id));
+  },{ rootMargin:'-20% 0px -70% 0px' }).observe(s));
+
+// ── Sortable top-genes table ──
+let _gs = {};
+function sortTbl(col) {
+  const tbl = document.getElementById('top-genes-tbl');
+  if (!tbl) return;
+  const asc = _gs[col] !== 'asc'; _gs[col] = asc ? 'asc' : 'desc';
+  const tbody = tbl.tBodies[0];
+  [...tbody.rows].sort((a,b) => {
+    const av = a.cells[col].dataset.val ?? a.cells[col].textContent.trim();
+    const bv = b.cells[col].dataset.val ?? b.cells[col].textContent.trim();
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an)&&!isNaN(bn)) return asc ? an-bn : bn-an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  }).forEach(r => tbody.appendChild(r));
+  [...tbl.querySelectorAll('thead th')].forEach((th,i) => {
+    th.textContent = th.textContent.replace(/ [▲▼]$/,'');
+    if (i===col) th.textContent += asc ? ' ▲' : ' ▼';
+  });
+}
+function searchGeneTable(q) {
+  const tbl = document.getElementById('top-genes-tbl');
+  if (!tbl) return;
+  const ql = q.toLowerCase();
+  [...tbl.tBodies[0].rows].forEach(r => {
+    r.style.display = r.textContent.toLowerCase().includes(ql) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>"""
+
+# ── HTML assembly helpers ──────────────────────────────────────────────────────
+
+def card(pid, title, note):
+    return (f'<div class="card"><div class="card-title">{title}</div>'
+            f'<div class="card-note">{note}</div>'
+            f'<div id="{pid}" style="width:100%;min-height:300px"></div></div>')
+
+def html_card(html_content, title, note):
+    return (f'<div class="card"><div class="card-title">{title}</div>'
+            f'<div class="card-note">{note}</div>'
+            f'{html_content}</div>')
+
+def section(sid, title, desc, body):
+    return (f'<section class="section" id="{sid}">'
+            f'<div class="sec-title">{title}</div>'
+            f'<p class="sec-desc">{desc}</p>{body}'
+            f'<hr class="div"></section>')
+
+def nav_group(label, items):
+    links = "".join(f'<a class="nav-item" href="#{s}">{n}</a>' for s, n in items)
+    return f'<div class="nav-group"><div class="nav-label">{label}</div>{links}</div>'
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
@@ -1001,135 +1249,384 @@ def plot_consensus_clustering(pdf, colnames, lcpm, sample_colors, n_top, run_war
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python comprehensive_report_python.py <counts_file> <output_pdf>")
+        print("Usage: python rnaseq_html_report.py <counts_file> <output.html>")
         sys.exit(1)
 
-    counts_f   = sys.argv[1]
-    output_pdf = sys.argv[2]
-    os.makedirs(os.path.dirname(os.path.abspath(output_pdf)), exist_ok=True)
+    counts_f, out_html = sys.argv[1], sys.argv[2]
+    os.makedirs(os.path.dirname(os.path.abspath(out_html)), exist_ok=True)
 
-    run_warnings = []
+    warns_list = []
+    plots      = {}    # plot_id → JSON string
+    html_blks  = {}    # block_id → raw HTML string
+    content    = []
+    navs       = []
 
-    print("\nRNA-seq QC Report Generator")
+    def store(k, fn, *a, **kw):
+        try:
+            f = fn(*a, **kw)
+            if f is not None:
+                plots[k] = to_json(f)
+        except Exception as e:
+            warns_list.append(f"'{k}': {e}")
+            warn(f"'{k}' failed:\n    {traceback.format_exc(limit=2)}")
+
+    print("\nRNA-seq QC HTML Report")
     print("=" * 50)
 
-    # 1. Load
-    with log_step("Loading count matrix"):
+    # ── Load ─────────────────────────────────────────────────────────────────
+    with step("Loading"):
         try:
-            raw = pd.read_csv(counts_f, sep="\t", comment="#")
+            raw, genes, names = load_counts(counts_f)
         except Exception as e:
-            print(f"\n[ERROR] Could not read input file: {e}")
-            sys.exit(1)
+            print(f"\n[ERROR] {e}"); sys.exit(1)
+        n_samp, n_raw = raw.shape[1], raw.shape[0]
+        print(f"\n    Samples: {n_samp}  |  Genes: {n_raw}")
+        if n_samp < 2:
+            warns_list.append("Only 1 sample — many plots will be skipped.")
 
-        raw_counts  = raw.iloc[:, 6:].to_numpy(dtype=float)
-        geneids     = raw["Geneid"].values
-        colnames    = [c.split("/")[-1].split("_Aligned")[0].rstrip(".bam")
-                       for c in raw.columns[6:]]
-        n_samples   = raw_counts.shape[1]
-        n_genes_raw = raw_counts.shape[0]
-        print(f"\n    Samples: {n_samples}  |  Genes: {n_genes_raw}")
-        if n_samples < 2:
-            run_warnings.append("Only 1 sample — several multi-sample plots will be skipped.")
+    # ── Normalise ─────────────────────────────────────────────────────────────
+    with step("Normalising"):
+        lib, cpm_all, cpm_f, lcpm, keep = normalise(raw)
+        genes_f  = genes[keep]
+        n_filt   = lcpm.shape[1]
+        n_before = (raw > 0).sum(axis=0).astype(int)
+        n_after  = (lcpm > 0).sum(axis=1).astype(int)
+        n_top    = min(2000, n_filt)
+        print(f"\n    Filtered: {n_filt} genes  |  Top-var: {n_top}")
 
-    # 2. Pre-filter stats
-    with log_step("Pre-filter stats"):
-        n_genes_before = (raw_counts > 0).sum(axis=0).astype(int)
+    colors = make_colors(names)
 
-    # 3. CPM + filter
-    with log_step("CPM normalisation and filtering"):
-        lib_sizes_raw = raw_counts.sum(axis=0)
-        if np.any(lib_sizes_raw == 0):
-            run_warnings.append("One or more samples have zero total counts.")
-        lib_sizes_raw = np.where(lib_sizes_raw == 0, 1, lib_sizes_raw)
+    # ── 1. Summary ────────────────────────────────────────────────────────────
+    with step("Summary"):
+        store("overview", fig_overview, names, lib, n_before, n_after, colors)
 
-        cpm_raw = raw_counts / lib_sizes_raw[np.newaxis, :] * 1e6
-        keep    = (cpm_raw > 1).any(axis=1)
-        if keep.sum() == 0:
-            run_warnings.append("No genes passed CPM > 1 filter — skipping gene filter.")
-            keep = np.ones(n_genes_raw, dtype=bool)
+        # Stats mini-table
+        lib_m = lib / 1e6
+        stats_html = "".join(
+            f'<div class="stat"><div class="stat-label">{l}</div>'
+            f'<div class="stat-val">{v}</div>'
+            f'<div class="stat-sub">{s}</div></div>'
+            for l, v, s in [
+                ("Samples",        str(n_samp),                ""),
+                ("Genes (raw)",    f"{n_raw:,}",               ""),
+                ("Genes (filtered)",f"{n_filt:,}",             "CPM > 1"),
+                ("Lib size — mean",f"{lib_m.mean():.1f} M",    f"SD {lib_m.std():.1f} M"),
+                ("Lib size — min", f"{lib_m.min():.1f} M",     ""),
+                ("Lib size — max", f"{lib_m.max():.1f} M",     ""),
+            ])
 
-        counts_filt  = raw_counts[keep, :]
-        geneids      = geneids[keep]
-        lib_sizes    = counts_filt.sum(axis=0)
-        lib_sizes    = np.where(lib_sizes == 0, 1, lib_sizes)
-        cpm          = counts_filt / lib_sizes[np.newaxis, :] * 1e6
-        lcpm         = np.log2(cpm + 1).T                     # samples x genes
-        n_genes_filt = lcpm.shape[1]
-        n_genes_after = (lcpm > 0).sum(axis=1).astype(int)
-        n_top         = min(2000, n_genes_filt)
+        rows = "".join(
+            f"<tr><td>{s}</td><td>{lib[i]:,.0f}</td>"
+            f"<td>{n_before[i]:,}</td><td>{n_after[i]:,}</td>"
+            f"<td>{n_after[i]/max(n_before[i],1)*100:.1f}%</td></tr>"
+            for i, s in enumerate(names))
+        warn_html = ""
+        if warns_list:
+            items = "".join(f"• {w}<br>" for w in warns_list)
+            warn_html = f'<div class="warn"><strong>Warnings</strong>{items}</div>'
 
-        print(f"\n    Genes after filter: {n_genes_filt}  |  Top-var used: {n_top}")
-        if n_genes_filt < 10:
-            run_warnings.append(
-                f"Very few genes passed filter ({n_genes_filt}). Results may be unreliable.")
+        tbl_html = (
+            f'<div class="card"><div class="card-title">Per-sample counts</div>'
+            f'<div class="card-note">Library size = total mapped reads (raw counts). '
+            f'Filtered = genes with CPM > 1 in ≥ 1 sample.</div>'
+            f'<table class="qc"><thead><tr><th>Sample</th><th>Library size</th>'
+            f'<th>Genes (raw)</th><th>Genes (CPM-filtered)</th><th>Kept %</th>'
+            f'</tr></thead><tbody>{rows}</tbody></table>{warn_html}</div>')
 
-    # 4. Sample colours
-    sample_colors = assign_colors(colnames)
+        content.append(section(
+            "s-summary", "Summary",
+            "Quick dataset overview. The chart shows library sizes (bars) and "
+            "CPM-filtered gene counts (diamonds) per sample. "
+            "The table provides exact numbers. "
+            "Outliers in either metric warrant investigation.",
+            f'<div class="stats-row">{stats_html}</div>'
+            + card("overview",
+                   "Dataset Overview — library sizes and gene detection",
+                   "Left: total mapped reads per sample; dashed line = mean. "
+                   "Right: genes detected before (faded) and after (solid) CPM > 1 filtering — "
+                   "the drop shows how many lowly-expressed genes were removed. "
+                   "Same colour per sample across both panels.")
+            + tbl_html))
+        navs.append(nav_group("Overview", [("s-summary", "Summary")]))
 
-    # 5. Build PDF
-    print(f"\n  Writing PDF: {output_pdf}")
-    with PdfPages(output_pdf) as pdf:
-        meta            = pdf.infodict()
-        meta["Title"]   = "RNA-seq QC Report"
-        meta["Subject"] = counts_f
+    # ── 2. QC Metrics ─────────────────────────────────────────────────────────
+    with step("QC metrics"):
+        store("lib_sizes",  fig_library_sizes,  names, lib, colors)
+        store("det_raw",    fig_detected_raw,   names, n_before, colors)
+        store("det_filt",   fig_detected_filt,  names, n_after, colors)
+        store("cpm_box",    fig_cpm_boxplot,    names, lcpm, colors)
+        store("cpm_dens",   fig_cpm_density,    names, lcpm, colors)
+        store("outlier_z",  fig_outlier_heatmap,names, lcpm, lib, n_after, n_filt)
 
-        embedding_step = (
-            ("MA plots",
-             lambda: plot_ma_plots(pdf, colnames, lcpm, n_genes_filt))
-            if n_samples <= 10 else
-            ("UMAP + k-means (k=2)",
-             lambda: plot_umap_kmeans(
-                 pdf, colnames, lcpm, sample_colors, n_top, run_warnings))
-        )
+        body = (
+            card("lib_sizes", "Library Sizes",
+                 "Total mapped reads per sample (raw counts). "
+                 "Lines: mean (solid) and ±1 SD (dashed). Outliers deviate strongly from the mean.") +
+            card("det_raw", "Genes Detected — Raw Counts",
+                 "Genes with at least one read per sample. "
+                 "Mean ±1 SD shown. Data: all raw counts.") +
+            card("det_filt", "Genes Detected — After CPM > 1 Filter",
+                 "Genes passing CPM > 1 in ≥ 1 sample. "
+                 "A sample with far fewer genes than peers may be degraded or swapped.") +
+            card("cpm_box", "CPM Distribution — Boxplots",
+                 "log₂(CPM+1) per sample (CPM-filtered genes). "
+                 "Medians should align across all samples; systematic shifts indicate bias.") +
+            card("cpm_dens", "CPM Distribution — Density Curves",
+                 "log₂(CPM+1) density per sample. "
+                 "All samples should broadly overlap. "
+                 "Toggle individual samples via the legend.") +
+            card("outlier_z", "Multi-Metric Outlier Overview",
+                 "Robust Z-score = (value − median) / MAD per QC metric. "
+                 "Red border = |Z| ≥ 2 on ≥ 1 metric. "
+                 "Hover for exact values. "
+                 "Library size uses raw counts; all other metrics use CPM-filtered genes."))
+        content.append(section("s-qc", "QC Metrics",
+            "Per-sample quality control. Check library sizes for under-sequenced samples, "
+            "CPM distributions for systematic shifts, and the outlier heatmap for "
+            "samples that deviate on multiple metrics simultaneously.",
+            body))
+        navs.append(nav_group("QC", [("s-qc", "QC Metrics")]))
 
-        steps = [
-            ("Summary table",
-             lambda: plot_summary_table(
-                 pdf, colnames, lib_sizes, n_genes_before, n_genes_after, run_warnings)),
-            ("Library sizes",
-             lambda: plot_library_sizes(pdf, colnames, lib_sizes, sample_colors)),
-            ("CPM distributions",
-             lambda: plot_cpm_distributions(
-                 pdf, colnames, lcpm, sample_colors, n_genes_filt)),
-            ("Detected genes",
-             lambda: plot_detected_genes(
-                 pdf, colnames, n_genes_before, n_genes_after, sample_colors)),
-            embedding_step,
-            ("Sample correlation",
-             lambda: plot_sample_correlation(
-                 pdf, colnames, lcpm, sample_colors, n_genes_filt)),
-            ("PCA",
-             lambda: plot_pca(pdf, colnames, lcpm, sample_colors, n_top)),
-            ("Outlier overview",
-             lambda: plot_outlier_summary(
-                 pdf, colnames, lcpm, lib_sizes, n_genes_after, n_genes_filt)),
-            ("Hierarchical clustering",
-             lambda: plot_hierarchical_clustering(pdf, colnames, lcpm, n_genes_filt)),
-            ("Mean vs CV",
-             lambda: plot_mean_cv(pdf, colnames, lcpm, cpm, geneids, n_genes_filt)),
-            ("Top expressed genes",
-             lambda: plot_top_genes_table(pdf, colnames, cpm, geneids)),
-            ("Consensus clustering",
-             lambda: plot_consensus_clustering(
-                 pdf, colnames, lcpm, sample_colors, n_top, run_warnings)),
-        ]
+    # ── 3. Sample Structure ───────────────────────────────────────────────────
+    with step("Sample structure"):
+        # Run consensus early so we can pass group labels to the correlation plot
+        try:
+            _cres_early = figs_consensus(names, lcpm, n_top, [])
+            _early_labels = (_cres_early["grp_labels"]
+                             if _cres_early and "grp_labels" in _cres_early else None)
+        except Exception:
+            _early_labels = None
 
-        for step_name, fn in steps:
-            with log_step(step_name):
-                try:
-                    fn()
-                except Exception as e:
-                    run_warnings.append(f"Plot '{step_name}' failed: {e}")
-                    warn(f"'{step_name}' failed — skipping.\n"
-                         f"    {traceback.format_exc(limit=3)}")
+        store("corr", fig_correlation, names, lcpm, n_filt, _early_labels)
+        store("dend", fig_ward_dendrogram, names, lcpm, n_filt)
+
+        f3d, C, pct = fig_pca_3d(names, lcpm, n_top, colors)
+        if f3d: plots["pca3d"] = to_json(f3d)
+        store("pca_scree",    fig_scree,        lcpm, n_top)
+        store("pca_loadings", fig_pca_loadings, lcpm, genes_f, n_top)
+        store("scatter_pair", fig_sample_scatter_pairs, names, lcpm, colors)
+
+        if n_samp <= 12:
+            store("embed", fig_ma, names, lcpm)
+            emb_card = card("embed", "MA Plots — each sample vs pseudo-bulk mean",
+                            "M = log₂(sample) − log₂(mean). Red dashed = M=0. "
+                            "Green = mean M ±1 SD. Systematic shift = sample-level bias. "
+                            "Data: CPM-filtered genes.")
+            emb_lbl = "MA Plots"
+            emb, elbl = None, "PC"
+        else:
+            try:
+                f_es, emb, elbl = fig_umap_sample(names, lcpm, n_top, colors, warns_list)
+                plots["embed"] = to_json(f_es)
+            except Exception as e:
+                warns_list.append(f"UMAP: {e}"); emb, elbl = None, "PC"
+            emb_card = card("embed",
+                            f"{elbl} Embedding — coloured by sample identity",
+                            f"Top {n_top} variable genes (log₂ CPM+1, CPM-filtered). "
+                            "Hover to identify samples. Isolated points = candidate outliers.")
+            emb_lbl = elbl
+
+        body = (
+            card("corr", "Sample-to-Sample Pearson Correlation — two orderings",
+                 f"Left: ordered by hierarchical clustering. "
+                 f"Right: ordered by estimated group (if available) or by mean inter-sample r. "
+                 f"Hover for exact r values. "
+                 f"Data: log₂(CPM+1), CPM-filtered genes (n={n_filt}).") +
+            card("dend", "Hierarchical Sample Clustering — Ward Linkage",
+                 f"Euclidean distance on log₂(CPM+1), Ward linkage. "
+                 f"Longer branches = more dissimilar. "
+                 f"Isolated samples on long branches are outlier candidates.") +
+            (card("pca3d", "PCA — Interactive 3D (PC1 × PC2 × PC3)",
+                  f"Top {n_top} most variable genes. Drag to rotate. "
+                  "Hover for exact coordinates. "
+                  "Isolated points or tight clusters suggest outliers or biological groups.") if f3d else "") +
+            card("pca_scree", "PCA Scree Plot",
+                 "% variance explained per PC and cumulative total. "
+                 "Many PCs needed to reach 80% (dashed) suggests complex structure.") +
+            card("pca_loadings", "PCA Loadings — Top 15 Genes per PC",
+                 "Genes with the largest absolute loading on PC1 (left) and PC2 (right). "
+                 "Red = positive contribution, blue = negative. "
+                 "These genes drive the separation seen in the 3D PCA.") +
+            (card("scatter_pair", "Pairwise Sample Scatter — all sample pairs",
+                  "Each panel = one sample pair. Red dashed = y=x (perfect agreement). "
+                  "r = Pearson correlation. Points below the line = lower expression in that sample. "
+                  "Only shown for n ≤ 6 samples.")
+             if "scatter_pair" in plots else "") +
+            emb_card)
+
+        content.append(section("s-struct", "Sample Structure",
+            "How similar are samples to each other? "
+            "The correlation heatmap and dendrogram show pairwise similarity. "
+            "PCA and the embedding reveal global low-dimensional structure. "
+            "Outliers appear as isolated points or samples with low average correlation.",
+            body))
+        navs.append(nav_group("Structure", [
+            ("s-struct", "Sample Structure"),
+        ]))
+
+    # ── 4. Gene Analysis ──────────────────────────────────────────────────────
+    with step("Gene analysis"):
+        store("mean_cv", fig_mean_cv, lcpm, genes_f, n_filt)
+
+        try:
+            tg_html = html_top_genes_table(names, cpm_f, genes_f, n_top=20)
+            html_blks["top_genes"] = tg_html
+        except Exception as e:
+            warns_list.append(f"Top genes table: {e}")
+            html_blks["top_genes"] = f"<p style='color:red'>Table failed: {e}</p>"
+
+        store("heatmap", fig_heatmap_with_dendro, names, lcpm, genes_f, n_filt)
+
+        body = (
+            card("mean_cv", "Mean Expression vs Coefficient of Variation",
+                 f"Each dot = one CPM-filtered gene (n={n_filt}). "
+                 "Colour = local density. Red curve = running median CV (30 bins). "
+                 "Red diamonds = top 20 high-CV genes (mean log₂ CPM > 1, labelled). "
+                 "High-CV genes drive PCA/UMAP structure.") +
+            html_card(html_blks["top_genes"],
+                      "Top 20 Most Highly Expressed Genes — all samples (linear CPM)",
+                      "Ranked by mean CPM across all samples. "
+                      "Click any column header to sort. "
+                      "Use the search box to filter by gene ID or sample name. "
+                      "Light red rows = gene accounts for >5% of total mean CPM "
+                      "(may indicate rRNA contamination or a dominant transcript). "
+                      "Data: linear CPM, CPM-filtered genes.") +
+            card("heatmap",
+                 f"Heatmap — Top {min(500,n_filt)} Most Variable Genes",
+                 "Centred log₂(CPM+1). "
+                 "Rows (samples) and columns (genes) ordered by Ward hierarchical clustering. "
+                 "Left panel = sample dendrogram. "
+                 "Red = above mean, blue = below mean. "
+                 "Use zoom/pan to inspect gene clusters."))
+        content.append(section("s-genes", "Gene Analysis",
+            "Gene-level diagnostics: the CV plot reveals the mean–variance relationship "
+            "and flags the most variable genes. The top-genes table shows the "
+            "most abundant transcripts across all samples (useful for spotting "
+            "contamination). The heatmap shows how the most variable genes "
+            "separate samples.",
+            body))
+        navs.append(nav_group("Genes", [("s-genes", "Gene Analysis")]))
+
+    # ── 5. Group Estimation ───────────────────────────────────────────────────
+    with step("Group estimation"):
+        ge_body = ""
+
+        # Silhouette score table
+        try:
+            sil_html = html_silhouette_table(names, lcpm, n_top)
+            if sil_html:
+                ge_body += html_card(
+                    sil_html,
+                    "Silhouette Scores — Ward Hierarchical Groups (k = 2 … min(6, n−1))",
+                    "Silhouette score ranges from −1 to 1. "
+                    "Values > 0.5 indicate well-separated groups; < 0.2 suggests overlap. "
+                    "Use alongside the consensus matrix to judge group confidence. "
+                    "Green row = best k by silhouette."
+                )
+        except Exception as e:
+            warns_list.append(f"Silhouette table: {e}")
+
+        # k-means on embedding
+        if emb is not None:
+            try:
+                f_ec, kl = _kmeans_on_embedding(names, lcpm, n_top, emb, elbl)
+                plots["km_embed"] = to_json(f_ec)
+                ge_body += card("km_embed",
+                                f"{elbl} Embedding — k-means clusters (k=2)",
+                                f"Same embedding as Sample Structure section, "
+                                f"coloured by k-means assignment (k=2, "
+                                f"top {n_top} variable genes). "
+                                f"Purely exploratory — no ground-truth used.")
+            except Exception as e:
+                warns_list.append(f"k-means embed: {e}")
+
+        # Hierarchical cut
+        try:
+            f_hp, f_ht = figs_hierarchical_groups(names, lcpm, n_top)
+            if f_hp:
+                plots["hc_pca"] = to_json(f_hp)
+                plots["hc_tbl"] = to_json(f_ht)
+                ge_body += (
+                    card("hc_pca",
+                         "PCA — Hierarchical Groups (automatic dendrogram cut)",
+                         "Ward dendrogram cut at the k where the largest gap in "
+                         "merge heights occurs (k = 2..6 considered). "
+                         "Complements consensus clustering with a faster, "
+                         "deterministic method.") +
+                    card("hc_tbl", "Hierarchical Group Assignments",
+                         "Sample-to-group assignments from the hierarchical cut method."))
+        except Exception as e:
+            warns_list.append(f"Hierarchical groups: {e}")
+
+        # Consensus clustering
+        try:
+            cres = figs_consensus(names, lcpm, n_top, warns_list)
+            if cres and "cooc" in cres:
+                bk = cres["best_k"]
+                plots["cons_cooc"] = to_json(cres["cooc"])
+                plots["cons_stab"] = to_json(cres["stab"])
+                if cres.get("pca"): plots["cons_pca"] = to_json(cres["pca"])
+                plots["cons_grp"]  = to_json(cres["grp"])
+                ge_body += (
+                    card("cons_cooc",
+                         f"Consensus Co-occurrence Matrix (best k={bk})",
+                         f"Fraction of 100 k-means runs (k=2..{min(6,n_samp-1)}) "
+                         f"where each pair of samples shared a cluster. "
+                         f"Values near 1 (dark) = consistently grouped. "
+                         f"Values near 0.5 = ambiguous. "
+                         f"Red lines = cluster boundaries at best k={bk}. "
+                         f"Data: top {n_top} variable genes.") +
+                    card("cons_stab",
+                         "Consensus Stability — CDF Area per k",
+                         f"Higher bar = more decisive clustering at that k. "
+                         f"Red bar = chosen k={bk} (largest jump in delta). "
+                         f"Green line = delta between adjacent k values.") +
+                    (card("cons_pca",
+                          f"PCA — Consensus Group Colours (k={bk})",
+                          "PCA coloured by the consensus group assignment.")
+                     if "cons_pca" in plots else "") +
+                    card("cons_grp",
+                         f"Consensus Group Assignments (k={bk})",
+                         "Final group assignments. No prior sample labels were used."))
+        except Exception as e:
+            warns_list.append(f"Consensus: {e}")
+            warn(f"Consensus: {traceback.format_exc(limit=2)}")
+
+        if ge_body:
+            content.append(section("s-groups", "Group Estimation",
+                "Three complementary unsupervised methods estimate potential sample groups "
+                "without using any prior labels. "
+                "(1) k-means (k=2) on the UMAP/PCA embedding — fast, simple. "
+                "(2) Hierarchical dendrogram cut at the largest distance gap — deterministic. "
+                "(3) Consensus clustering over 100 random restarts — more robust, "
+                "quantifies uncertainty via co-occurrence. "
+                "Agreement across methods increases confidence in a grouping.",
+                ge_body))
+            navs.append(nav_group("Groups", [("s-groups", "Group Estimation")]))
+
+    # ── Write HTML ─────────────────────────────────────────────────────────────
+    with step("Writing"):
+        ts   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        html = (HTML
+                .replace("__NAV__",     "".join(navs))
+                .replace("__TS__",      ts)
+                .replace("__INPUT__",   os.path.basename(counts_f))
+                .replace("__NS__",      str(n_samp))
+                .replace("__NGR__",     f"{n_raw:,}")
+                .replace("__NGF__",     f"{n_filt:,}")
+                .replace("__CONTENT__", "".join(content))
+                .replace("__PLOTS__",   json.dumps(plots)))
+        with open(out_html, "w", encoding="utf-8") as f:
+            f.write(html)
+        kb = os.path.getsize(out_html) // 1024
+        print(f"\n    {out_html}  ({kb} KB)")
 
     print("\n" + "=" * 50)
-    if run_warnings:
-        print("Warnings encountered:")
-        for w in run_warnings:
+    if warns_list:
+        print("Warnings:")
+        for w in warns_list:
             print(f"  * {w}")
-    print(f"\nDone. Report saved to: {output_pdf}\n")
-
+    print(f"\nDone → {out_html}\n")
 
 if __name__ == "__main__":
     main()

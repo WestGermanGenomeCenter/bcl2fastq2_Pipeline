@@ -791,8 +791,7 @@ rule featurecounts:
         gtf=config["mapping"]["gtf_file"],
         stranded=config["mapping"]["stranded"],
         outdir=outputfolder+"/counts",
-        script=p+"/scripts/heatmap.py",
-        pdf=outputfolder+"/counts/"+projectNum+"_CountsReport.pdf",
+
     conda:
         p+"/envs/counts.yaml"
     log:
@@ -809,7 +808,6 @@ rule featurecounts:
         """
         mkdir -p {params.outdir}
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
-        python {params.script} {output.counts_file} {params.pdf} 2>{log}
         chmod -f  ago+rwx -R {params.outdir}
         """
 
@@ -818,22 +816,27 @@ rule pca_plot:
         counts_file=outputfolder+"/counts/all.tsv"
     params:
         dir=outputfolder+"/counts/",
-        script=p+"/scripts/pca.R"
+        scriptr=p+"/scripts/pca.R",
+        script=p+"/scripts/heatmap.py",
+        pdf=outputfolder+"/counts/"+projectNum+"_CountsReport.pdf",
+        html_script=p+"/scripts/counts_report.py",
+        html_out=outputfolder+"/counts/"+projectNum+"_Counts_Report.html",
     conda:
         p+"/envs/pca_plot.yaml"
     log:
     	outputfolder+"/logs/pca/pca.log",
     output:
         outputfolder+"/counts/pca.png"
-    message: "doing a PCA / UMAP with the featurecounts data..."
+    message: "doing a PCA / UMAP with the featurecounts data, creating reports..."
     resources:
         threads=lambda wildcards, attempt: attempt * 2,
         time_hrs=lambda wildcards, attempt: attempt * 1,
-        mem_gb=lambda wildcards, attempt: attempt * 8
+        mem_gb=lambda wildcards, attempt: attempt * 24
     shell:
         """
-        Rscript --vanilla --no-warnings {params.script} {input.counts_file} {params.dir} 2>{log}
-        
+        Rscript --vanilla --no-warnings {params.scriptr} {input.counts_file} {params.dir} 2>{log}
+        python {params.script} {output.counts_file} {params.pdf} 2>{log}
+        python {params.html_script} {output.counts_file} {params.html_out} 2>{log}
         """
 
 

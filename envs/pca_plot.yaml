@@ -10,3 +10,12 @@ dependencies:
   - r-ggplot2
   - r-ggrepel
   - r-uwot
+  - pysam
+  - numpy
+  - pandas 
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - scipy
+  - umap-learn
+  - plotly
