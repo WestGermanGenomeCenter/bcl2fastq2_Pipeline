@@ -163,7 +163,6 @@ if not config["skip_demux"]["skip_demux_active"]:
             cat {params.Logs_path}/*.log >>{output} 
             rm -rf {params.output_dir}/Reports {params.output_dir}/Logs # just empty?
             python {params.script_for_checking} {input.samplesheet} >>{params.script_out} 2>/dev/null # should not be the reason for this rule to fail
-             # python -m samshee {input.samplesheet} >> {params.samshee_out} 2>/dev/null
             """
 
 
@@ -190,7 +189,7 @@ if not config["skip_demux"]["skip_demux_active"]:
         resources:
             threads=lambda wildcards, attempt:  12 + (attempt * 4) ,
             time_hrs=lambda wildcards, attempt: attempt * 4,
-            mem_gb=lambda wildcards, attempt: round(config["demux"]["demux_try1_gb"] / 2) +(config["demux"]["demux_try1_gb"] * (0.5 * attempt) )
+            mem_gb=lambda wildcards, attempt: round(config["demux"]["demux_try1_gb"] * 0.7 ) +(config["demux"]["demux_try1_gb"] * ( 0.3 * attempt) )
         conda:
             p+"/envs/demux.yaml"
         shell:
@@ -200,10 +199,10 @@ if not config["skip_demux"]["skip_demux_active"]:
             rm -rf {params.out_fastqs_dir}  >> {log} 2>&1 # to prevent 2 times demuxing into the same folder
             rm -f {params.outfastqs}  >> {log} 2>&1 
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force  --bcl-num-conversion-threads {resources.threads} >> {log} 2>&1
-            cp {input[0]} {params.output_dir} >> {log} 2>&1
+            cp -f {input[0]} {params.output_dir} >> {log} 2>&1
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
-            mv {params.undetermined} {params.output_dir} 2>/dev/null
-            mv {params.Logs_path} {params.bcl_log_path} >> {log} 2>&1
+            mv -f {params.undetermined} {params.output_dir} 2>/dev/null
+            mv -f {params.Logs_path} {params.bcl_log_path} >> {log} 2>&1
             """
 
 if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
@@ -236,9 +235,9 @@ if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
             chmod ago+rwx -R {params.out} >> {log} 2>&1
             rm -rf {params.fastq_destination} >> {log} 2>&1
             {params.exec_path} -R {params.infolder} --sample-sheet {input[0]} {params.additionalOptions} --barcode-mismatches {params.barcode_mismatches} -o {params.out} --interop-dir {params.out}  -r {resources.threads} -p {resources.threads} 2> {log[0]}
-            cp {input[0]} {params.out} >> {log} 2>&1
+            cp -f {input[0]} {params.out} >> {log} 2>&1
             mkdir -p {params.fastq_destination} >> {log} 2>&1
-            mv {params.out}/*/*.fastq.gz {params.fastq_destination} >> {log} 2>&1
+            mv -f {params.out}/*/*.fastq.gz {params.fastq_destination} >> {log} 2>&1
             touch {output}
            """
 
@@ -266,7 +265,7 @@ if config["skip_demux"]["skip_demux_active"]:
             mkdir -p {params.reports_dir}
             mkdir -p {params.untrimmed_fastq_folder}
             touch {params.reports_file}
-            mv {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
+            mv -f {params.dir_w_fastq}/*.gz {params.untrimmed_fastq_folder}
             touch {output.flagfile}
             """
 
@@ -344,6 +343,8 @@ rule interop_plots:
         time_hrs=lambda wildcards, attempt: attempt * 1,
         mem_gb=lambda wildcards, attempt: attempt * 22
     params:
+        tilt_script=p+"/scripts/tilt_report.py",
+        tilt_pdf=config["demux"]["OutputFolder"]+"/interop_plots/TiltReport.pdf",
         script=p+"/scripts/interop_more.py",
         # interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
@@ -373,6 +374,7 @@ rule interop_plots:
         python {params.script} {params.raw_files_place} {params.cluster_file}  >> /dev/null 2>&1
         python {params.cluster_pdf_script} {params.raw_files_place} {params.cluster_pdf} >> {log} 2>&1
         python {params.demux_py} -i {params.reports_dir} -o {params.demux_pdf} >> {log} 2>&1
+        python {params.tilt_script} {params.raw_files_place} {params.tilt_pdf} >> {log} 2>&1
         touch {output}
         """
 

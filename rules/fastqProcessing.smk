@@ -41,7 +41,6 @@ def getOutput():
 
     if config["mapping"]["mapping_active"]:
         all.extend(expand("{out}/counts/all.tsv",out=outputfolder))
-        #n         outputfolder+"/counts/pca.png"
         all.extend(expand("{out}/counts/pca.png",out=outputfolder))
 
         all.extend(expand("{out}/star/star_logs_summarized.csv",out=outputfolder))
@@ -122,6 +121,7 @@ def getFastQCs(wildcards):
         #fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
         fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=getSample_names_post_mapping()))
         fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) 
+        fastQCs.extend(expand("{out}/counts/all.tsv",out=outputfolder))
 
     if config["umi_tools"]["umi_tools_active"]:
         fastQCs.extend(expand("{out}/fastqc/{file}.umis-extracted_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
@@ -651,6 +651,7 @@ if isSingleEnd() == True:
         shell:
             """
             rm -rf {params.workdir}
+            rm -f {output}
             mkdir -p {params.log_folder} 
             mkdir -p {params.folder_sort} 2>{log}
             sortmerna {params.ref_string} --reads {input} --threads {resources.threads} --workdir {params.workdir} --aligned {params.fq_rrna_string} --fastx --other {params.fq_rrna_free_string} >> {log} 2>&1
@@ -715,6 +716,7 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             outputfolder + "/umi_extract/{file}.umis-extracted.fastq.gz"
         shell:
             """
+            rm -f {output}
             mkdir -p {params.outputf}
             mkdir -p {params.logfolder}
             umi_tools extract --stdin={input} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output}
@@ -745,6 +747,7 @@ if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, b
             outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam"
         shell:
             """
+            rm -f {output}
             mkdir -p {params.logfolder}
             samtools sort --threads {resources.threads} {input} -o {params.sorted_bam} 2>{log}
             samtools index {params.sorted_bam} 2>{log}
@@ -776,6 +779,7 @@ rule Qualimap:
         mem_gb=lambda wildcards, attempt: attempt * 12
     shell:
     	"""
+        rm -f {output}
     	mkdir -p {params.qualimap_logfolder} >> {log} 2>&1
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
@@ -806,6 +810,7 @@ rule featurecounts:
 
     shell:
         """
+        rm -f {output}
         mkdir -p {params.outdir}
         featureCounts -a {params.gtf} -o {output.counts_file} {input} -T {resources.threads} -g gene_id {params.stranded}
         chmod -f  ago+rwx -R {params.outdir}
@@ -1031,26 +1036,26 @@ rule biobloom:
         nice biobloomcategorizer -f {params.filter_string} {params.fastq_file} -t {resources.threads} -p {params.output_prefix} >> {log} 2>&1
   
         """
+# deactivete this rule to make featurecounts always the tool of choice
 
-
-if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
-    rule count_matrix:
-        input:
-            expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getSample_names_post_mapping())
-        output:
-            outputfolder+"/counts/all.tsv"
-        resources:
-            threads=lambda wildcards, attempt: attempt * 1,
-            time_hrs=lambda wildcards, attempt: attempt * 1,
-            mem_gb=lambda wildcards, attempt: attempt * 4
-        params:
-            samples=getFiles(),
-            strand="1"
-        conda:
-            p+"/envs/pandas.yaml"
-        script:
-            "../scripts/count-matrix.py"
-
+#f not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
+#   rule count_matrix:
+#       input:
+#           expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getSample_names_post_mapping())
+#       output:
+#           outputfolder+"/counts/all.tsv"
+#       resources:
+#           threads=lambda wildcards, attempt: attempt * 1,
+#           time_hrs=lambda wildcards, attempt: attempt * 1,
+#           mem_gb=lambda wildcards, attempt: attempt * 4
+#       params:
+#           samples=getFiles(),
+#           strand="1"
+#       conda:
+#           p+"/envs/pandas.yaml"
+#       script:
+#           "../scripts/count-matrix.py"
+#
 
 rule transfer_files:
     input:
