@@ -1,994 +1,978 @@
 #!/usr/bin/env python3
 """
-Sequencing Run Report Generator
-
-Parses Illumina BCLConvert output files and generates a concise, professional
-4-page PDF QC report suitable for sharing with non-specialists.
+Illumina InterOp QC Plot Generator using Python
+Compatible with NovaSeqX+, NextSeq, NextSeq2000, and MiSeq
+Generates comprehensive quality control plots for sequencing runs
 
 Usage:
-    python sequencing_report_generator.py --input <input_folder> --output <output_pdf>
+    python interop_more.py <run_folder> <output_pdf>
+
+Requirements:
+    conda install -c bioconda illumina-interop
+    conda install pandas matplotlib seaborn numpy reportlab
 """
 
-import os
 import sys
-import argparse
-import warnings
+import os
 from pathlib import Path
-import xml.etree.ElementTree as ET
-
-import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.gridspec as gridspec
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.patches import FancyBboxPatch
-
+import warnings
 warnings.filterwarnings('ignore')
 
-# ── Design system ────────────────────────────────────────────────────────────
-NAVY    = '#1B2A4A'
-TEAL    = '#0D7377'
-TEAL_LT = '#14A085'
-AMBER   = '#E8A838'
-RED     = '#C0392B'
-GREY_BG = '#F4F6F9'
-GREY_MID= '#BDC3C7'
-WHITE   = '#FFFFFF'
-TEXT_DK = '#1B2A4A'
-TEXT_MD = '#4A5568'
+try:
+    import numpy as np
+    import pandas as pd
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from interop import py_interop_run_metrics, py_interop_run
+    import interop.core as ic
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from datetime import datetime
+    from io import BytesIO
+except ImportError as e:
+    print(f"Error: Missing required package: {e}")
+    print("\nPlease install required packages:")
+    print("  conda install -c bioconda illumina-interop")
+    print("  conda install pandas matplotlib seaborn numpy reportlab")
+    sys.exit(1)
 
-plt.rcParams.update({
-    'font.family':      'DejaVu Sans',
-    'axes.spines.top':  False,
-    'axes.spines.right':False,
-    'axes.edgecolor':   GREY_MID,
-    'axes.labelcolor':  TEXT_MD,
-    'xtick.color':      TEXT_MD,
-    'ytick.color':      TEXT_MD,
-    'text.color':       TEXT_DK,
-    'figure.facecolor': WHITE,
-    'axes.facecolor':   GREY_BG,
-    'grid.color':       WHITE,
-    'grid.linewidth':   1.0,
-})
+# Set style similar to Illumina SAV
+sns.set_style("whitegrid")
+plt.rcParams['figure.dpi'] = 150
+plt.rcParams['savefig.dpi'] = 150
+plt.rcParams['font.size'] = 10
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['xtick.labelsize'] = 9
+plt.rcParams['ytick.labelsize'] = 9
+plt.rcParams['legend.fontsize'] = 9
 
+# Illumina SAV color palette
+LANE_COLORS = {
+    1: '#0072B2',
+    2: '#E69F00',
+    3: '#009E73',
+    4: '#D55E00',
+    5: '#CC79A7',
+    6: '#F0E442',
+    7: '#56B4E9',
+    8: '#999999',
+}
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+CHANNEL_COLORS = {
+    'A': '#009E73',
+    'C': '#0072B2',
+    'G': '#000000',
+    'T': '#D55E00',
+}
 
-def fmt_num(n, decimals=0):
-    """Format a number with thousand separators."""
-    if pd.isna(n):
-        return 'N/A'
-    return f'{n:,.{decimals}f}'
-
-def fmt_pct(v, decimals=1):
-    """Format a fraction (0-1) as percentage string."""
-    if pd.isna(v):
-        return 'N/A'
-    return f'{v * 100:.{decimals}f}%'
-
-def pass_fail_color(value, threshold, invert=False):
-    """Return TEAL_LT (pass) or RED (fail) based on threshold comparison."""
-    if invert:
-        return RED if value > threshold else TEAL_LT
-    return TEAL_LT if value >= threshold else RED
-
-def draw_metric_card(ax, title, value, subtitle='', value_color=TEAL, bg=GREY_BG):
-    """Draw a KPI card on a given axes."""
-    ax.set_facecolor(bg)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis('off')
-    # Title
-    ax.text(0.5, 0.78, title, ha='center', va='center',
-            fontsize=9, color=TEXT_MD, fontweight='normal')
-    # Value
-    ax.text(0.5, 0.44, value, ha='center', va='center',
-            fontsize=20, color=value_color, fontweight='bold')
-    # Subtitle
-    if subtitle:
-        ax.text(0.5, 0.15, subtitle, ha='center', va='center',
-                fontsize=8, color=TEXT_MD, style='italic')
-    # Border
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    rect = FancyBboxPatch((0.02, 0.02), 0.96, 0.96,
-                           boxstyle='round,pad=0.02',
-                           linewidth=1.5, edgecolor=GREY_MID,
-                           facecolor=WHITE, transform=ax.transAxes, zorder=0)
-    ax.add_patch(rect)
-
-
-# ── Parser ───────────────────────────────────────────────────────────────────
-
-class SequencingRunParser:
-    def __init__(self, input_folder):
-        self.input_folder = Path(input_folder)
-        self.data = {}
-
-    def parse_all(self):
-        print("Parsing sequencing run files...")
-        self._parse_run_info()
-        self._parse_demultiplex_stats()
-        self._parse_quality_metrics()
-        self._parse_adapter_metrics()
-        self._parse_top_unknown_barcodes()
-        print("Parsing complete.")
-        return self.data
-
-    def _parse_run_info(self):
-        fp = self.input_folder / 'RunInfo.xml'
-        if not fp.exists():
-            print(f"  Warning: {fp.name} not found")
-            return
-        root = ET.parse(fp).getroot()
-        run = root.find('Run')
-        reads = []
-        for r in run.findall('.//Read'):
-            reads.append({
-                'number':   r.get('Number'),
-                'cycles':   int(r.get('NumCycles')),
-                'is_index': r.get('IsIndexedRead') == 'Y'
+class InterOpQCPlotter:
+    """Generate comprehensive QC plots from Illumina InterOp data"""
+    
+    def __init__(self, run_folder):
+        self.run_folder = Path(run_folder)
+        self.plot_images = []  # List of (title, description, image_data)
+        
+        print(f"[INFO] Loading run metrics from: {self.run_folder}")
+        self.run_metrics = py_interop_run_metrics.run_metrics()
+        
+        if not (self.run_folder / "InterOp").exists():
+            raise FileNotFoundError(f"InterOp folder not found in {self.run_folder}")
+        
+        try:
+            self.run_metrics.read(str(self.run_folder))
+            print(f"[INFO] Successfully loaded run metrics")
+        except Exception as e:
+            print(f"[ERROR] Failed to load run metrics: {e}")
+            raise
+        
+        try:
+            self.imaging_df = self._load_imaging_table()
+            print(f"[INFO] Loaded imaging table with {len(self.imaging_df)} rows")
+        except Exception as e:
+            print(f"[WARN] Could not load imaging table: {e}")
+            self.imaging_df = None
+        
+        try:
+            self.summary_df = self._load_summary_table()
+            print(f"[INFO] Loaded summary table")
+        except Exception as e:
+            print(f"[WARN] Could not load summary table: {e}")
+            self.summary_df = None
+    
+    def _has_valid_data(self, data, metric_name):
+        """Check if data contains valid non-zero values"""
+        if data is None or len(data) == 0:
+            return False
+        
+        if isinstance(data, pd.Series):
+            valid_data = data.dropna()
+            if len(valid_data) == 0:
+                return False
+            if (valid_data == 0).all():
+                return False
+            if valid_data.std() < 1e-10:
+                return False
+        elif isinstance(data, pd.DataFrame):
+            valid_data = data.dropna(how='all')
+            if len(valid_data) == 0:
+                return False
+            numeric_cols = valid_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                if (valid_data[numeric_cols] == 0).all().all():
+                    return False
+        
+        return True
+    
+    def _load_imaging_table(self):
+        """Load imaging table into pandas DataFrame"""
+        ar = ic.imaging(str(self.run_folder))
+        df = pd.DataFrame(ar)
+        
+        int_cols = ['Lane', 'Tile', 'Tile Number', 'Read', 'Cycle', 
+                    'Cycle Within Read', 'Swath', 'Surface']
+        for col in int_cols:
+            if col in df.columns:
+                df[col] = df[col].astype(int)
+        
+        return df
+    
+    def _load_summary_table(self):
+        """Load summary table"""
+        try:
+            summary_data = ic.summary(str(self.run_folder), level='Lane')
+            return pd.DataFrame(summary_data)
+        except:
+            try:
+                summary_data = ic.summary(str(self.run_folder))
+                return pd.DataFrame(summary_data)
+            except:
+                return None
+    
+    def _save_fig_to_image(self, fig):
+        """Save figure to PNG image for PDF embedding"""
+        buf = BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        buf.seek(0)
+        plt.close(fig)
+        return buf.getvalue()
+    
+    def _get_tile_metrics(self):
+        """Extract tile metrics from run_metrics"""
+        tile_metric_set = self.run_metrics.tile_metric_set()
+        tile_data = []
+        
+        for i in range(tile_metric_set.size()):
+            metric = tile_metric_set.at(i)
+            tile_data.append({
+                'Lane': metric.lane(),
+                'Tile': metric.tile(),
+                'Cluster Count': metric.cluster_count(),
+                'Cluster Count PF': metric.cluster_count_pf(),
+                'Cluster Density': metric.cluster_density(),
+                'Cluster Density PF': metric.cluster_density_pf(),
+                'Percent PF': metric.percent_pf(),
+                'Percent Occupied': metric.percent_occupied() if hasattr(metric, 'percent_occupied') else np.nan,
             })
-        layout = run.find('.//FlowcellLayout')
-        self.data['run_info'] = {
-            'run_id':    run.get('Id'),
-            'flowcell':  run.find('Flowcell').text,
-            'instrument':run.find('Instrument').text,
-            'date':      run.find('Date').text,
-            'reads':     reads,
-            'layout': {
-                'lanes':    int(layout.get('LaneCount')),
-                'surfaces': int(layout.get('SurfaceCount')),
-                'swaths':   int(layout.get('SwathCount')),
-                'tiles':    int(layout.get('TileCount')),
-            }
-        }
+        
+        return pd.DataFrame(tile_data) if tile_data else None
+    
+    def _get_max_lanes(self):
+        """Get maximum number of lanes in flowcell"""
+        try:
+            return self.run_metrics.run_info().flowcell().lane_count()
+        except:
+            return 8
+    
+    def plot_summary_page(self):
+        """Create summary page with overall run statistics"""
+        print("[INFO] Generating summary page...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            total_clusters = tile_df['Cluster Count'].sum()
+            pf_clusters = tile_df['Cluster Count PF'].sum()
+            non_pf_clusters = total_clusters - pf_clusters
+            pct_pf = (pf_clusters / total_clusters * 100) if total_clusters > 0 else 0
+            
+            fig = plt.figure(figsize=(10, 6))
+            ax = fig.add_subplot(111)
+            ax.axis('off')
+            
+            # Summary text
+            summary_text = f"""
+ILLUMINA RUN SUMMARY REPORT
+Run Folder: {self.run_folder.name}
+Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-    def _parse_demultiplex_stats(self):
-        fp = self.input_folder / 'Demultiplex_Stats.csv'
-        if not fp.exists():
-            print(f"  Warning: {fp.name} not found"); return
-        self.data['demux_stats'] = pd.read_csv(fp)
+OVERALL CLUSTER STATISTICS
+{'─' * 60}
 
-    def _parse_quality_metrics(self):
-        fp = self.input_folder / 'Quality_Metrics.csv'
-        if not fp.exists():
-            print(f"  Warning: {fp.name} not found"); return
-        self.data['quality_metrics'] = pd.read_csv(fp)
+Total Clusters:                    {total_clusters:,}
+Clusters Passing Filter (PF):      {pf_clusters:,}
+Clusters Failing Filter:           {non_pf_clusters:,}
 
-    def _parse_adapter_metrics(self):
-        fp = self.input_folder / 'Adapter_Metrics.csv'
-        if not fp.exists():
-            print(f"  Warning: {fp.name} not found"); return
-        self.data['adapter_metrics'] = pd.read_csv(fp)
+Percent PF:                        {pct_pf:.2f}%
+Percent Non-PF:                    {100 - pct_pf:.2f}%
 
-    def _parse_top_unknown_barcodes(self):
-        fp = self.input_folder / 'Top_Unknown_Barcodes.csv'
-        if not fp.exists():
-            print(f"  Warning: {fp.name} not found"); return
-        self.data['unknown_barcodes'] = pd.read_csv(fp)
-
-
-# ── Report Generator ─────────────────────────────────────────────────────────
-
-class ReportGenerator:
-    def __init__(self, data):
-        self.data = data
-        self._precompute_summaries()
-
-    # ── Pre-computation ───────────────────────────────────────────────────────
-
-    def _precompute_summaries(self):
-        """Derive all key numbers once so pages can reuse them."""
-        d = self.data
-        s = {}
-
-        # Run info
-        if 'run_info' in d:
-            ri = d['run_info']
-            data_reads  = [r for r in ri['reads'] if not r['is_index']]
-            index_reads = [r for r in ri['reads'] if r['is_index']]
-            s['run_id']     = ri.get('run_id', 'N/A')
-            s['flowcell']   = ri.get('flowcell', 'N/A')
-            s['instrument'] = ri.get('instrument', 'N/A')
-            s['date']       = ri.get('date', 'N/A')[:10] if ri.get('date') else 'N/A'
-            s['read_type']  = 'Paired-End' if len(data_reads) > 1 else 'Single-Read'
-            s['read_cycles']= ' + '.join(str(r['cycles']) for r in data_reads)
-            s['index_cycles']= ' + '.join(str(r['cycles']) for r in index_reads) if index_reads else '—'
-            layout = ri.get('layout', {})
-            s['lanes']      = layout.get('lanes', 'N/A')
-            s['tiles_per_lane'] = (layout.get('surfaces', 0) *
-                                   layout.get('swaths', 0) *
-                                   layout.get('tiles', 0))
-
-        # Demux stats
-        if 'demux_stats' in d:
-            df = d['demux_stats']
-            df_s = df[df['SampleID'] != 'Undetermined']
-            df_u = df[df['SampleID'] == 'Undetermined']
-            s['num_samples']      = len(df_s)
-            s['total_reads']      = int(df['# Reads'].sum())
-            s['assigned_reads']   = int(df_s['# Reads'].sum())
-            s['undetermined_reads']= int(df_u['# Reads'].sum()) if len(df_u) > 0 else 0
-            s['assigned_pct']     = s['assigned_reads'] / s['total_reads'] if s['total_reads'] else 0
-            s['undetermined_pct'] = s['undetermined_reads'] / s['total_reads'] if s['total_reads'] else 0
-            s['avg_reads']        = s['assigned_reads'] / s['num_samples'] if s['num_samples'] else 0
-            s['perfect_index_mean']= df_s['% Perfect Index Reads'].mean()
-            s['demux_df']         = df_s.copy()
-
-        # Quality metrics
-        if 'quality_metrics' in d:
-            df = d['quality_metrics']
-            df_s = df[df['SampleID'] != 'Undetermined']
-            sample_q = df_s.groupby('SampleID').agg(
-                Yield=('Yield', 'sum'),
-                YieldQ30=('YieldQ30', 'sum'),
-                Q30=('% Q30', 'mean'),
-                MeanQS=('Mean Quality Score (PF)', 'mean')
-            ).reset_index()
-            s['total_yield_gb']   = sample_q['Yield'].sum() / 1e9
-            s['avg_q30']          = sample_q['Q30'].mean()
-            s['avg_mean_qs']      = sample_q['MeanQS'].mean()
-            s['quality_df']       = sample_q
-
-        # Adapter metrics
-        if 'adapter_metrics' in d:
-            df = d['adapter_metrics']
-            df_s = df[df['Sample_ID'] != 'Undetermined']
-            sample_a = df_s.groupby('Sample_ID').agg(
-                AdapterBases=('AdapterBases', 'sum'),
-                SampleBases=('SampleBases', 'sum'),
-                AdapterPct=('% Adapter Bases', 'mean')
-            ).reset_index()
-            s['avg_adapter_pct']  = sample_a['AdapterPct'].mean()
-            s['adapter_df']       = sample_a
-
-        # Unknown barcodes
-        if 'unknown_barcodes' in d:
-            s['unknown_df'] = d['unknown_barcodes']
-
-        self.summary = s
-
-    # ── PDF entry point ───────────────────────────────────────────────────────
-
-    def generate(self, output_path):
-        print(f"Generating report → {output_path}")
-        with PdfPages(output_path) as pdf:
-            print("  Page 1: Run Overview…", end='', flush=True)
-            self._page_overview(pdf);     print(" ✓")
-            print("  Page 2: Quality Summary…", end='', flush=True)
-            self._page_quality(pdf);      print(" ✓")
-            print("  Page 3: Sample Distribution…", end='', flush=True)
-            self._page_samples(pdf);      print(" ✓")
-            print("  Page 4: QC Flags & Barcodes…", end='', flush=True)
-            self._page_flags(pdf);        print(" ✓")
-            print("  Page 5: Glossary & Further Reading…", end='', flush=True)
-            self._page_glossary(pdf);     print(" ✓")
-
-            # PDF metadata
-            info = pdf.infodict()
-            info['Title']   = f'Sequencing QC Report – {self.summary.get("flowcell","")}'
-            info['Author']  = 'Sequencing Report Generator'
-            info['Subject'] = 'Illumina Run Quality Control'
-
-        print(f"\n✓ Report saved: {output_path}")
-
-    # ── Shared header/footer helpers ──────────────────────────────────────────
-
-    def _add_header(self, fig, title, page_num, total_pages=5):
-        """Draw a coloured header band and footer line."""
-        # Header band
-        fig.add_axes([0, 0.945, 1, 0.055]).set_axis_off()
-        header_ax = fig.axes[-1]
-        header_ax.set_facecolor(NAVY)
-        header_ax.set_xlim(0, 1); header_ax.set_ylim(0, 1)
-        header_ax.text(0.02, 0.5, '● Sequencing QC Report',
-                       color=WHITE, fontsize=9, va='center', alpha=0.7)
-        header_ax.text(0.5, 0.5, title,
-                       color=WHITE, fontsize=13, fontweight='bold',
-                       ha='center', va='center')
-        fc = self.summary.get('flowcell', '')
-        header_ax.text(0.98, 0.5, f'{fc}  |  {page_num}/{total_pages}',
-                       color=WHITE, fontsize=8, va='center', ha='right', alpha=0.7)
-        # Footer
-        footer = fig.add_axes([0.04, 0.005, 0.92, 0.012])
-        footer.set_axis_off()
-        footer.set_facecolor(NAVY)
-        footer.set_xlim(0,1); footer.set_ylim(0,1)
-        ts = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
-        footer.text(0.5, 0.5, f'Generated {ts}   ·   Illumina Sequencing QC',
-                    color=WHITE, fontsize=7, ha='center', va='center', alpha=0.8)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PAGE 1 – Run Overview (key numbers at a glance)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def _page_overview(self, pdf):
-        s = self.summary
-        fig = plt.figure(figsize=(11, 8.5), facecolor=WHITE)
-        self._add_header(fig, 'Run Overview', 1)
-
-        # ── Run identity block ─────────────────────────────────────────────
-        # Left column: instrument details
-        id_ax = fig.add_axes([0.03, 0.75, 0.40, 0.18])
-        id_ax.set_axis_off()
-        id_ax.set_facecolor(WHITE)
-        id_ax.set_xlim(0,1); id_ax.set_ylim(0,1)
-
-        lines = [
-            ('Run ID',      s.get('run_id','N/A')),
-            ('Flowcell ID', s.get('flowcell','N/A')),
-            ('Instrument',  s.get('instrument','N/A')),
-            ('Run Date',    s.get('date','N/A')),
-            ('Read Type',   f"{s.get('read_type','N/A')}  ({s.get('read_cycles','?')} bp data  /  {s.get('index_cycles','?')} bp index)"),
-            ('Lanes',       str(s.get('lanes','N/A'))),
-        ]
-        y = 0.92
-        id_ax.text(0, 1.02, 'Run Configuration', fontsize=11, fontweight='bold', color=NAVY)
-        for label, val in lines:
-            id_ax.text(0.00, y, f'{label}:', fontsize=9, color=TEXT_MD)
-            id_ax.text(0.40, y, val,         fontsize=9, color=TEXT_DK, fontweight='bold')
-            y -= 0.17
-
-        # ── KPI cards row ──────────────────────────────────────────────────
-        # 5 cards across the full width
-        card_w, card_h = 0.17, 0.19
-        card_y = 0.52
-        gap = 0.016
-        starts = [0.03 + i*(card_w+gap) for i in range(5)]
-
-        # Card 1: Total clusters (= total reads)
-        total_reads = s.get('total_reads', 0)
-        val_str = (f'{total_reads/1e6:.1f} M' if total_reads < 1e9
-                   else f'{total_reads/1e9:.2f} B')
-        cax = fig.add_axes([starts[0], card_y, card_w, card_h])
-        draw_metric_card(cax, 'Total Clusters', val_str,
-                         subtitle='Reads generated this run',
-                         value_color=NAVY)
-
-        # Card 2: Assigned reads %
-        ap = s.get('assigned_pct', 0)
-        ap_col = pass_fail_color(ap, 0.80)
-        cax = fig.add_axes([starts[1], card_y, card_w, card_h])
-        draw_metric_card(cax, 'Assigned Reads', fmt_pct(ap),
-                         subtitle='Successfully demultiplexed',
-                         value_color=ap_col)
-
-        # Card 3: Q30 %
-        q30 = s.get('avg_q30', 0)
-        q30_col = pass_fail_color(q30, 0.80)
-        cax = fig.add_axes([starts[2], card_y, card_w, card_h])
-        draw_metric_card(cax, '% Bases ≥ Q30', fmt_pct(q30),
-                         subtitle='Avg. across all samples (≥80% good)',
-                         value_color=q30_col)
-
-        # Card 4: Total yield
-        yld = s.get('total_yield_gb', 0)
-        cax = fig.add_axes([starts[3], card_y, card_w, card_h])
-        draw_metric_card(cax, 'Total Yield', f'{yld:.1f} Gb',
-                         subtitle='Gigabases of sequencing data',
-                         value_color=TEAL)
-
-        # Card 5: Perfect index rate
-        pir = s.get('perfect_index_mean', 0)
-        pir_col = pass_fail_color(pir, 0.85)
-        cax = fig.add_axes([starts[4], card_y, card_w, card_h])
-        draw_metric_card(cax, 'Perfect Index Rate', fmt_pct(pir),
-                         subtitle='Exact barcode match (≥85% good)',
-                         value_color=pir_col)
-
-        # ── What do these metrics mean? ────────────────────────────────────
-        expl_ax = fig.add_axes([0.03, 0.36, 0.93, 0.14])
-        expl_ax.set_axis_off()
-        expl_ax.set_facecolor(GREY_BG)
-        expl_ax.set_xlim(0,1); expl_ax.set_ylim(0,1)
-
-        rect = FancyBboxPatch((0,0), 1, 1, boxstyle='round,pad=0.01',
-                               linewidth=1, edgecolor=GREY_MID,
-                               facecolor=GREY_BG, transform=expl_ax.transAxes)
-        expl_ax.add_patch(rect)
-        expl_ax.text(0.01, 0.90, 'How to read this report',
-                     fontsize=9, fontweight='bold', color=NAVY, va='top')
-        explanations = (
-            "Total Clusters — the number of DNA fragments detected and sequenced on the flowcell.  "
-            "Assigned Reads — fraction of clusters matched to a sample barcode; low values suggest barcode or sample-loading issues.  "
-            "% Bases ≥ Q30 — a Q30 base has a 99.9% accuracy; this is the primary quality benchmark for Illumina runs.  "
-            "Total Yield — total gigabases (Gb) of sequence produced, excluding unassigned reads.  "
-            "Perfect Index Rate — fraction of reads where the barcode matched exactly (no mismatches); "
-            "a low rate can increase undetermined reads."
-        )
-        expl_ax.text(0.01, 0.65, explanations,
-                     fontsize=8, color=TEXT_MD, va='top', wrap=True,
-                     linespacing=1.55)
-
-        # ── Overall QC verdict ─────────────────────────────────────────────
-        verdict_ax = fig.add_axes([0.03, 0.18, 0.93, 0.16])
-        verdict_ax.set_axis_off()
-        verdict_ax.set_xlim(0,1); verdict_ax.set_ylim(0,1)
-
-        checks = [
-            ('Demultiplexing ≥ 80%', s.get('assigned_pct', 0),  0.80, False),
-            ('Q30 ≥ 80%',            s.get('avg_q30', 0),        0.80, False),
-            ('Perfect Index ≥ 85%',  s.get('perfect_index_mean',0), 0.85, False),
-        ]
-        if 'avg_adapter_pct' in s:
-            checks.append(('Adapter < 1%', s['avg_adapter_pct'], 0.01, True))
-
-        all_pass = all(
-            (v < thr if inv else v >= thr)
-            for _, v, thr, inv in checks
-        )
-        verdict_col   = TEAL_LT if all_pass else AMBER
-        verdict_label = '✔  All key metrics PASS' if all_pass else '⚠  One or more metrics need attention'
-
-        verdict_ax.text(0.0, 0.92, 'QC Verdict', fontsize=10, fontweight='bold', color=NAVY)
-        verdict_ax.text(0.0, 0.65, verdict_label,
-                        fontsize=13, fontweight='bold', color=verdict_col)
-
-        x = 0.0
-        for label, val, thr, inv in checks:
-            passed = (val < thr) if inv else (val >= thr)
-            icon   = '✔' if passed else '✗'
-            col    = TEAL_LT if passed else RED
-            verdict_ax.text(x, 0.28, f'{icon} {label}',
-                            fontsize=8.5, color=col, va='center')
-            x += 0.26
-
-        # Secondary stats
-        verdict_ax.text(0.0, 0.02,
-            f"Samples: {s.get('num_samples','N/A')}   ·   "
-            f"Avg reads/sample: {fmt_num(s.get('avg_reads',0))}   ·   "
-            f"Undetermined: {fmt_pct(s.get('undetermined_pct',0))}   ·   "
-            f"Mean quality score: {s.get('avg_mean_qs',0):.1f}",
-            fontsize=8, color=TEXT_MD)
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PAGE 2 – Quality Metrics
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def _page_quality(self, pdf):
-        s = self.summary
-        fig = plt.figure(figsize=(11, 8.5), facecolor=WHITE)
-        self._add_header(fig, 'Quality Metrics', 2)
-
-        has_quality  = 'quality_df' in s
-        has_adapter  = 'adapter_df' in s
-
-        # ── Annotation boxes ───────────────────────────────────────────────
-        def note(fig, x, y, w, h, text):
-            ax = fig.add_axes([x, y, w, h])
-            ax.set_axis_off(); ax.set_xlim(0,1); ax.set_ylim(0,1)
-            rect = FancyBboxPatch((0,0), 1, 1, boxstyle='round,pad=0.02',
-                                   linewidth=0.8, edgecolor=GREY_MID,
-                                   facecolor=GREY_BG, transform=ax.transAxes)
-            ax.add_patch(rect)
-            ax.text(0.05, 0.5, text, fontsize=7.5, color=TEXT_MD,
-                    va='center', linespacing=1.5)
-
-        # ── Plot 1: Q30 distribution ───────────────────────────────────────
-        if has_quality:
-            ax1 = fig.add_axes([0.07, 0.57, 0.38, 0.32])
-            q30 = s['quality_df']['Q30'].values * 100
-            n, bins, patches = ax1.hist(q30, bins=25, color=TEAL, edgecolor=WHITE, linewidth=0.4)
-            for p, b in zip(patches, bins):
-                p.set_facecolor(TEAL_LT if b >= 80 else RED)
-            ax1.axvline(q30.mean(), color=NAVY, linestyle='--', linewidth=1.5,
-                        label=f'Mean: {q30.mean():.1f}%')
-            ax1.axvline(80, color=AMBER, linestyle=':', linewidth=1.5,
-                        label='Target ≥ 80%')
-            ax1.set_xlabel('% Bases with Quality ≥ Q30', fontsize=9)
-            ax1.set_ylabel('Number of Samples', fontsize=9)
-            ax1.set_title('Q30 Score Distribution', fontsize=11, fontweight='bold',
-                          color=NAVY, pad=8)
-            ax1.legend(fontsize=8)
-            ax1.xaxis.set_major_locator(plt.MaxNLocator(8))
-            ax1.yaxis.set_major_locator(plt.MaxNLocator(6))
-            note(fig, 0.07, 0.49, 0.38, 0.07,
-                 "Q30 means ≥99.9% base accuracy. Samples left of the dashed line may "
-                 "need closer inspection. Most runs target ≥80%.")
-
-        # ── Plot 2: Mean quality score distribution ────────────────────────
-        if has_quality:
-            ax2 = fig.add_axes([0.57, 0.57, 0.38, 0.32])
-            qs = s['quality_df']['MeanQS'].values
-            ax2.hist(qs, bins=25, color=TEAL, edgecolor=WHITE, linewidth=0.4)
-            ax2.axvline(qs.mean(), color=NAVY, linestyle='--', linewidth=1.5,
-                        label=f'Mean: {qs.mean():.1f}')
-            ax2.axvline(30, color=AMBER, linestyle=':', linewidth=1.5,
-                        label='Target ≥ Q30')
-            ax2.set_xlabel('Mean Phred Quality Score', fontsize=9)
-            ax2.set_ylabel('Number of Samples', fontsize=9)
-            ax2.set_title('Mean Quality Score Distribution', fontsize=11,
-                          fontweight='bold', color=NAVY, pad=8)
-            ax2.legend(fontsize=8)
-            ax2.xaxis.set_major_locator(plt.MaxNLocator(8))
-            ax2.yaxis.set_major_locator(plt.MaxNLocator(6))
-            note(fig, 0.57, 0.49, 0.38, 0.07,
-                 "The Phred score (Q-score) measures base-call accuracy. "
-                 "Q30 = 99.9% accurate; Q20 = 99%. Higher is better.")
-
-        # ── Plot 3: Adapter contamination ────────────────────────────────
-        if has_adapter:
-            ax3 = fig.add_axes([0.07, 0.13, 0.38, 0.30])
-            adp = s['adapter_df']['AdapterPct'].values * 100
-            n, bins, patches = ax3.hist(adp, bins=25, color=AMBER, edgecolor=WHITE, linewidth=0.4)
-            for p, b in zip(patches, bins):
-                p.set_facecolor(RED if b >= 1.0 else AMBER)
-            ax3.axvline(adp.mean(), color=NAVY, linestyle='--', linewidth=1.5,
-                        label=f'Mean: {adp.mean():.3f}%')
-            ax3.axvline(1.0, color=RED, linestyle=':', linewidth=1.5,
-                        label='Warning ≥ 1%')
-            ax3.set_xlabel('% Adapter Bases per Sample', fontsize=9)
-            ax3.set_ylabel('Number of Samples', fontsize=9)
-            ax3.set_title('Adapter Contamination Distribution', fontsize=11,
-                          fontweight='bold', color=NAVY, pad=8)
-            ax3.legend(fontsize=8)
-            ax3.xaxis.set_major_locator(plt.MaxNLocator(8))
-            ax3.yaxis.set_major_locator(plt.MaxNLocator(6))
-            note(fig, 0.07, 0.05, 0.38, 0.07,
-                 "Adapter sequences are sequencing kit artefacts, not biological sequence. "
-                 "Values >1% suggest short insert sizes or library prep issues.")
-
-        # ── KPI summary panel ──────────────────────────────────────────────
-        kpi_ax = fig.add_axes([0.57, 0.08, 0.38, 0.38])
-        kpi_ax.set_axis_off(); kpi_ax.set_xlim(0,1); kpi_ax.set_ylim(0,1)
-        rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                               linewidth=1,edgecolor=GREY_MID,
-                               facecolor=GREY_BG,transform=kpi_ax.transAxes)
-        kpi_ax.add_patch(rect)
-        kpi_ax.text(0.5, 0.94, 'Quality Summary', fontsize=11, fontweight='bold',
-                    color=NAVY, ha='center', va='top')
-
-        rows = []
-        if has_quality:
-            qd = s['quality_df']
-            rows += [
-                ('Avg Q30 (%)',         fmt_pct(s['avg_q30']),
-                 pass_fail_color(s['avg_q30'], 0.80)),
-                ('Min Q30 – any sample',fmt_pct(qd['Q30'].min()),
-                 pass_fail_color(qd['Q30'].min(), 0.75)),
-                ('Avg Mean Quality Score', f"{s['avg_mean_qs']:.2f}",
-                 pass_fail_color(s['avg_mean_qs'], 30)),
-                ('Total Yield',         f"{s['total_yield_gb']:.1f} Gb", TEAL),
-                ('Avg Yield / Sample',  f"{s['total_yield_gb']/s['num_samples']*1000:.1f} Mb"
-                 if s.get('num_samples') else 'N/A', TEAL),
-            ]
-        if has_adapter:
-            avg_a = s['avg_adapter_pct']
-            rows += [
-                ('Avg Adapter Content', f"{avg_a*100:.3f}%",
-                 pass_fail_color(avg_a, 0.01, invert=True)),
-                ('Max Adapter – any sample',
-                 f"{s['adapter_df']['AdapterPct'].max()*100:.3f}%",
-                 pass_fail_color(s['adapter_df']['AdapterPct'].max(), 0.01, invert=True)),
-            ]
-
-        y = 0.82
-        for label, val, col in rows:
-            kpi_ax.text(0.06, y, label, fontsize=9, color=TEXT_MD)
-            kpi_ax.text(0.94, y, val,   fontsize=9, color=col,
-                        fontweight='bold', ha='right')
-            kpi_ax.axhline(y - 0.035, xmin=0.04, xmax=0.96,
-                           color=GREY_MID, linewidth=0.5,
-                           transform=kpi_ax.transAxes)
-            y -= 0.10
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PAGE 3 – Sample Distribution
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def _page_samples(self, pdf):
-        s = self.summary
-        if 'demux_df' not in s:
+QUALITY ASSESSMENT
+{'─' * 60}
+"""
+            if pct_pf >= 80:
+                summary_text += "✓ EXCELLENT - >80% clusters passing filter\n"
+            elif pct_pf >= 70:
+                summary_text += "◐ GOOD - 70-80% clusters passing filter\n"
+            else:
+                summary_text += "✗ WARNING - <70% clusters passing filter\n"
+            
+            summary_text += f"""
+PER-LANE BREAKDOWN
+{'─' * 60}
+"""
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            for _, row in lane_groups.iterrows():
+                lane = int(row['Lane'])
+                total = int(row['Cluster Count'])
+                pf = int(row['Cluster Count PF'])
+                pct = (pf / total * 100) if total > 0 else 0
+                summary_text += f"Lane {lane}: Total={total:,}  PF={pf:,}  ({pct:.2f}%)\n"
+            
+            ax.text(0.05, 0.95, summary_text, transform=ax.transAxes,
+                   fontsize=10, verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+            
+            fig.tight_layout()
+            description = "Overall run summary showing cluster statistics and per-lane quality breakdown."
+            self.plot_images.append(('Run Summary', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created summary page")
+        except Exception as e:
+            print(f"[WARN] Could not create summary page: {e}")
+    
+    def plot_cluster_distribution(self):
+        """Plot cluster count distribution across lanes"""
+        print("[INFO] Generating cluster distribution plots...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            total_counts = lane_groups['Cluster Count'].values
+            pf_counts = lane_groups['Cluster Count PF'].values
+            non_pf_counts = total_counts - pf_counts
+            lane_list = lane_groups['Lane'].values.astype(int)
+            
+            x = np.arange(len(lane_list))
+            width = 0.6
+            
+            colors_list = [LANE_COLORS.get(lane, f'C{lane-1}') for lane in lane_list]
+            
+            ax.bar(x, pf_counts, width, label='Passing Filter', color='#2ecc71', alpha=0.8, edgecolor='black', linewidth=1)
+            ax.bar(x, non_pf_counts, width, bottom=pf_counts, label='Failing Filter', 
+                   color='#e74c3c', alpha=0.8, edgecolor='black', linewidth=1)
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Cluster Count', fontsize=11, fontweight='bold')
+            ax.set_title('Stacked Cluster Distribution: PF vs Non-PF', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lane_list])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x/1e6):.0f}M' if x >= 1e6 else f'{int(x/1e3):.0f}K'))
+            
+            fig.tight_layout()
+            description = "Stacked bar chart showing the proportion of clusters passing versus failing quality filters for each lane."
+            self.plot_images.append(('Cluster Distribution', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster distribution plot")
+        except Exception as e:
+            print(f"[WARN] Could not create cluster distribution plot: {e}")
+    
+    def plot_overall_cluster_pie(self):
+        """Plot pie chart showing overall PF vs non-PF distribution"""
+        print("[INFO] Generating cluster breakdown pie chart...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            pf = tile_df['Cluster Count PF'].sum()
+            non_pf = tile_df['Cluster Count'].sum() - pf
+            total = pf + non_pf
+            pct_pf = (pf / total * 100) if total > 0 else 0
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            sizes = [pf, non_pf]
+            labels = [f'Passing Filter\n{pf:,}\n({pct_pf:.2f}%)', 
+                     f'Failing Filter\n{non_pf:,}\n({100 - pct_pf:.2f}%)']
+            colors = ['#2ecc71', '#e74c3c']
+            explode = (0.05, 0)
+            
+            wedges, texts, autotexts = ax.pie(sizes, explode=explode, labels=labels, colors=colors, 
+                                               autopct='', shadow=True, startangle=90,
+                                               textprops={'fontsize': 11, 'fontweight': 'bold'})
+            ax.axis('equal')
+            
+            fig.tight_layout()
+            description = "Overall quality distribution showing the proportion of clusters passing versus failing quality filters across the entire run."
+            self.plot_images.append(('Overall Cluster Quality', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster breakdown pie chart")
+        except Exception as e:
+            print(f"[WARN] Could not create pie chart: {e}")
+    
+    def plot_lane_balance(self):
+        """Plot lane balance showing deviation from mean cluster count"""
+        print("[INFO] Generating lane balance plot...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            lane_groups = tile_df.groupby('Lane')['Cluster Count'].sum()
+            total_counts = [lane_groups.get(lane, 0) for lane in lanes]
+            
+            mean_count = np.mean(total_counts)
+            deviations = [(count - mean_count) / mean_count * 100 for count in total_counts]
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            colors = ['#2ecc71' if abs(d) < 10 else '#f39c12' if abs(d) < 20 else '#e74c3c' 
+                     for d in deviations]
+            
+            x = np.arange(len(lanes))
+            ax.bar(x, deviations, color=colors, alpha=0.8, edgecolor='black', linewidth=1)
+            ax.axhline(y=0, color='black', linewidth=1)
+            ax.axhline(y=10, color='orange', linestyle='--', linewidth=1.5, alpha=0.7, label='±10% threshold')
+            ax.axhline(y=-10, color='orange', linestyle='--', linewidth=1.5, alpha=0.7)
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Deviation from Mean (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Lane Balance: Cluster Count Deviation from Mean', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lanes])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            
+            for i, d in enumerate(deviations):
+                ax.text(i, d + (1 if d >= 0 else -1), f'{d:.1f}%', 
+                       ha='center', va='bottom' if d >= 0 else 'top', fontsize=9, fontweight='bold')
+            
+            fig.tight_layout()
+            description = "Lane balance analysis showing deviation from mean cluster count; lanes within ±10% indicate well-balanced sequencing."
+            self.plot_images.append(('Lane Balance', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created lane balance plot")
+        except Exception as e:
+            print(f"[WARN] Could not create lane balance plot: {e}")
+    
+    def plot_percent_pf_by_lane(self):
+        """Plot percent PF by lane"""
+        print("[INFO] Generating percent PF by lane plot...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            max_lanes = self._get_max_lanes()
+            
+            lane_groups = tile_df.groupby('Lane').agg({
+                'Cluster Count': 'sum',
+                'Cluster Count PF': 'sum'
+            }).reset_index()
+            
+            percent_pf = [(row['Cluster Count PF'] / row['Cluster Count'] * 100) 
+                         if row['Cluster Count'] > 0 else 0 
+                         for _, row in lane_groups.iterrows()]
+            lane_list = lane_groups['Lane'].values.astype(int)
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            x = np.arange(len(lane_list))
+            colors = ['#2ecc71' if p >= 80 else '#f39c12' if p >= 70 else '#e74c3c' for p in percent_pf]
+            
+            bars = ax.bar(x, percent_pf, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5, width=0.6)
+            ax.axhline(y=80, color='green', linestyle='--', linewidth=1.5, alpha=0.7, label='Excellent (80%)')
+            ax.axhline(y=70, color='orange', linestyle='--', linewidth=1.5, alpha=0.7, label='Good (70%)')
+            
+            ax.set_xlabel('Lane', fontsize=11, fontweight='bold')
+            ax.set_ylabel('% Passing Filter', fontsize=11, fontweight='bold')
+            ax.set_title('Percentage of Clusters Passing Filter by Lane', fontsize=13, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'Lane {int(l)}' for l in lane_list])
+            ax.set_ylim([0, 100])
+            ax.legend(loc='upper right', framealpha=0.95)
+            ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+            ax.set_axisbelow(True)
+            
+            for i, v in enumerate(percent_pf):
+                ax.text(i, v + 2, f'{v:.1f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            
+            fig.tight_layout()
+            description = "Percent passing filter per lane; >80% indicates excellent quality, 70-80% is good, <70% may indicate issues."
+            self.plot_images.append(('% PF by Lane', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created percent PF plot")
+        except Exception as e:
+            print(f"[WARN] Could not create percent PF plot: {e}")
+    
+    def plot_cluster_density_heatmap(self):
+        """Plot heatmap of cluster density across tiles"""
+        print("[INFO] Generating cluster density heatmap...")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is None:
+                return
+            
+            lanes = sorted(tile_df['Lane'].unique())
+            num_lanes = len(lanes)
+            
+            if num_lanes <= 2:
+                nrows, ncols = 1, num_lanes
+                figsize = (14, 5)
+            elif num_lanes <= 4:
+                nrows, ncols = 2, 2
+                figsize = (14, 10)
+            else:
+                nrows = (num_lanes + 1) // 2
+                ncols = 2
+                figsize = (14, 5 * nrows)
+            
+            fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+            fig.suptitle('Cluster Density (PF Clusters) Distribution by Tile', fontsize=13, fontweight='bold', y=0.995)
+            
+            for idx, lane in enumerate(lanes):
+                row = idx // ncols
+                col = idx % ncols
+                ax = axes[row, col]
+                
+                lane_data = tile_df[tile_df['Lane'] == lane].sort_values('Tile')
+                tiles = lane_data['Tile'].values.astype(int)
+                densities = lane_data['Cluster Count PF'].values
+                
+                tile_positions = np.arange(len(tiles))
+                cmap = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(tiles)))
+                
+                bars = ax.bar(tile_positions, densities, color=cmap, alpha=0.8, edgecolor='black', linewidth=0.5)
+                ax.set_xlabel('Tile Index', fontsize=10, fontweight='bold')
+                ax.set_ylabel('PF Cluster Count', fontsize=10, fontweight='bold')
+                ax.set_title(f'Lane {int(lane)}', fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+                ax.set_axisbelow(True)
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x/1e3):.0f}K'))
+                
+                mean_density = np.mean(densities)
+                ax.axhline(y=mean_density, color='blue', linestyle=':', linewidth=1.5, alpha=0.7, label=f'Mean: {mean_density:.0f}')
+                ax.legend(fontsize=8, loc='upper right')
+            
+            for idx in range(num_lanes, nrows * ncols):
+                row = idx // ncols
+                col = idx % ncols
+                axes[row, col].axis('off')
+            
+            fig.tight_layout()
+            description = "Tile-level cluster density heatmap showing uniform distribution indicates good flowcell quality; outliers suggest optical or chemistry issues."
+            self.plot_images.append(('Cluster Density Heatmap', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created cluster density heatmap")
+        except Exception as e:
+            print(f"[WARN] Could not create cluster density heatmap: {e}")
+    
+    def plot_qscore_by_cycle(self):
+        """Plot Q-score metrics by cycle"""
+        print("[INFO] Generating Q-score by cycle plots...")
+        
+        if self.imaging_df is None:
             return
-        fig = plt.figure(figsize=(11, 8.5), facecolor=WHITE)
-        self._add_header(fig, 'Sample Distribution', 3)
-
-        demux = s['demux_df'].sort_values('# Reads', ascending=False).reset_index(drop=True)
-        top_n  = min(25, len(demux))
-        top    = demux.head(top_n)
-
-        # ── Plot 1: Reads per sample bar chart ─────────────────────────────
-        ax1 = fig.add_axes([0.06, 0.50, 0.55, 0.38])
-        colors = [TEAL_LT if v >= s.get('avg_reads',0)*0.5 else RED
-                  for v in top['# Reads']]
-        bars = ax1.barh(range(len(top)), top['# Reads']/1e6,
-                        color=colors, edgecolor=WHITE, linewidth=0.3)
-        ax1.set_yticks(range(len(top)))
-        ax1.set_yticklabels(top['SampleID'], fontsize=7.5)
-        ax1.invert_yaxis()
-        ax1.set_xlabel('Reads (millions)', fontsize=9)
-        ax1.set_title(f'Reads per Sample  (top {top_n} shown)', fontsize=11,
-                      fontweight='bold', color=NAVY, pad=8)
-        ax1.xaxis.set_major_locator(plt.MaxNLocator(7))
-        avg_m = s.get('avg_reads', 0)/1e6
-        ax1.axvline(avg_m, color=AMBER, linestyle='--', linewidth=1.5,
-                    label=f'Average: {avg_m:.1f} M')
-        ax1.legend(fontsize=8)
-        note_text = (f"Red bars = samples with <50% of average read depth "
-                     f"({fmt_num(s.get('avg_reads',0))} reads avg). "
-                     f"Unevenness may reflect library prep variation.")
-        self._note_box(fig, 0.06, 0.43, 0.55, 0.06, note_text)
-
-        # ── Plot 2: Read-depth distribution histogram ─────────────────────
-        ax2 = fig.add_axes([0.70, 0.50, 0.26, 0.38])
-        ax2.hist(demux['# Reads']/1e6, bins=20, color=TEAL, edgecolor=WHITE, linewidth=0.4,
-                 orientation='horizontal')
-        ax2.axhline(demux['# Reads'].mean()/1e6, color=NAVY, linestyle='--',
-                    linewidth=1.5, label='Mean')
-        ax2.set_ylabel('Reads per Sample (M)', fontsize=9)
-        ax2.set_xlabel('Sample Count', fontsize=9)
-        ax2.set_title('Read Depth\nDistribution', fontsize=11,
-                      fontweight='bold', color=NAVY, pad=8)
-        ax2.legend(fontsize=8)
-        ax2.xaxis.set_major_locator(plt.MaxNLocator(5))
-        ax2.yaxis.set_major_locator(plt.MaxNLocator(7))
-
-        # ── Stats table ────────────────────────────────────────────────────
-        stats_ax = fig.add_axes([0.06, 0.08, 0.88, 0.33])
-        stats_ax.set_axis_off(); stats_ax.set_xlim(0,1); stats_ax.set_ylim(0,1)
-        rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                               linewidth=1,edgecolor=GREY_MID,
-                               facecolor=GREY_BG,transform=stats_ax.transAxes)
-        stats_ax.add_patch(rect)
-        stats_ax.text(0.5, 0.94, 'Sample Statistics', fontsize=11, fontweight='bold',
-                      color=NAVY, ha='center', va='top')
-
-        # 2-column layout
-        col_data = [
-            ('Total samples', fmt_num(s.get('num_samples',0))),
-            ('Total reads (all)', fmt_num(s.get('total_reads',0))),
-            ('Assigned reads', f"{fmt_num(s.get('assigned_reads',0))}  ({fmt_pct(s.get('assigned_pct',0))})"),
-            ('Undetermined reads', f"{fmt_num(s.get('undetermined_reads',0))}  ({fmt_pct(s.get('undetermined_pct',0))})"),
+        
+        metrics = ['%>= Q30', 'Error Rate']
+        available_metrics = [m for m in metrics if m in self.imaging_df.columns]
+        
+        if not available_metrics:
+            return
+        
+        for metric in available_metrics:
+            try:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
+                    continue
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                lanes = sorted(self.imaging_df['Lane'].unique())
+                plotted_any = False
+                
+                for lane in lanes:
+                    lane_data = self.imaging_df[self.imaging_df['Lane'] == lane]
+                    cycle_mean = lane_data.groupby('Cycle')[metric].mean()
+                    
+                    if not self._has_valid_data(cycle_mean, f"{metric}_lane{lane}"):
+                        continue
+                    
+                    color = LANE_COLORS.get(lane, f'C{lane-1}')
+                    ax.plot(cycle_mean.index, cycle_mean.values, 
+                           label=f'Lane {lane}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
+                    plotted_any = True
+                
+                if not plotted_any:
+                    plt.close(fig)
+                    continue
+                
+                ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+                ax.set_ylabel(metric, fontsize=11, fontweight='bold')
+                ax.set_title(f'{metric} by Cycle', fontsize=13, fontweight='bold')
+                ax.legend(loc='best', framealpha=0.95, ncol=4)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.set_axisbelow(True)
+                fig.tight_layout()
+                
+                description = f"Per-cycle {metric} shows sequencing quality across all lanes; declining quality indicates run issues."
+                self.plot_images.append((f'{metric} by Cycle', description, self._save_fig_to_image(fig)))
+                print(f"  ✓ Created {metric} plot")
+            except Exception as e:
+                print(f"[WARN] Could not create {metric} plot: {e}")
+    
+    def plot_intensity_distribution(self):
+        """Plot intensity metrics by cycle"""
+        print("[INFO] Generating intensity plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        intensity_cols = [col for col in self.imaging_df.columns 
+                         if any(x in col for x in ['Intensity', 'Corrected', 'Called'])]
+        
+        if not intensity_cols:
+            return
+        
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            cycle_data = self.imaging_df.groupby('Cycle')[intensity_cols].mean()
+            
+            plotted_any = False
+            for col in intensity_cols:
+                if not self._has_valid_data(cycle_data[col], col):
+                    continue
+                
+                label = col
+                ax.plot(cycle_data.index, cycle_data[col], 
+                       label=label, linewidth=2.5, alpha=0.8, marker='o', markersize=3)
+                plotted_any = True
+            
+            if not plotted_any:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Intensity (AU)', fontsize=11, fontweight='bold')
+            ax.set_title('Intensity Metrics by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Average signal intensity across all reads and lanes shows overall photometric quality; declining intensity indicates optical degradation."
+            self.plot_images.append(('Intensity Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created intensity plot")
+        except Exception as e:
+            print(f"[WARN] Could not create intensity plot: {e}")
+    
+    def plot_base_composition(self):
+        """Plot base composition by cycle"""
+        print("[INFO] Generating base composition plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        base_cols = [col for col in self.imaging_df.columns if '% Base' in col or '%Base' in col]
+        
+        if not base_cols:
+            return
+        
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            cycle_data = self.imaging_df.groupby('Cycle')[base_cols].mean()
+            
+            has_data = False
+            for col in base_cols:
+                if not self._has_valid_data(cycle_data[col], col):
+                    continue
+                
+                base = col.split('/')[-1] if '/' in col else col
+                color = CHANNEL_COLORS.get(base, None)
+                ax.plot(cycle_data.index, cycle_data[col], 
+                       label=f'Base {base}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
+                has_data = True
+            
+            if not has_data:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Percentage (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Base Composition by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.set_ylim([0, 100])
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Per-cycle distribution of the four DNA bases (A, C, G, T) detects nucleotide imbalance or contamination."
+            self.plot_images.append(('Base Composition', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created base composition plot")
+        except Exception as e:
+            print(f"[WARN] Could not create base composition plot: {e}")
+    
+    def plot_fwhm_metrics(self):
+        """Plot FWHM (focus) metrics"""
+        print("[INFO] Generating FWHM plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        fwhm_cols = [col for col in self.imaging_df.columns if 'Fwhm' in col or 'FWHM' in col]
+        
+        if not fwhm_cols:
+            return
+        
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            has_data = False
+            for metric in fwhm_cols:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
+                    continue
+                
+                cycle_mean = self.imaging_df.groupby('Cycle')[metric].mean()
+                ax.plot(cycle_mean.index, cycle_mean.values, 
+                       label=metric, linewidth=2.5, alpha=0.8, marker='s', markersize=4)
+                has_data = True
+            
+            if not has_data:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('FWHM', fontsize=11, fontweight='bold')
+            ax.set_title('FWHM (Focus Metric) by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Full Width at Half Maximum measures optical focus quality; higher values indicate worse focus and potential quality issues."
+            self.plot_images.append(('FWHM Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created FWHM plot")
+        except Exception as e:
+            print(f"[WARN] Could not create FWHM plot: {e}")
+    
+    def plot_phasing_prephasing(self):
+        """Plot phasing and prephasing metrics"""
+        print("[INFO] Generating phasing plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        phasing_cols = [col for col in self.imaging_df.columns 
+                       if 'Phasing' in col or 'Prephasing' in col]
+        
+        if not phasing_cols:
+            return
+        
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            has_data = False
+            for metric in phasing_cols:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
+                    continue
+                
+                cycle_mean = self.imaging_df.groupby('Cycle')[metric].mean()
+                ax.plot(cycle_mean.index, cycle_mean.values, 
+                       label=metric, linewidth=2.5, alpha=0.8, marker='o', markersize=4)
+                has_data = True
+            
+            if not has_data:
+                plt.close(fig)
+                return
+            
+            ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Percentage (%)', fontsize=11, fontweight='bold')
+            ax.set_title('Phasing/Prephasing by Cycle', fontsize=13, fontweight='bold')
+            ax.legend(loc='best', framealpha=0.95)
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            fig.tight_layout()
+            
+            description = "Phasing and prephasing rates measure template strand synchronization issues that accumulate over sequencing cycles."
+            self.plot_images.append(('Phasing Metrics', description, self._save_fig_to_image(fig)))
+            print(f"  ✓ Created phasing plot")
+        except Exception as e:
+            print(f"[WARN] Could not create phasing plot: {e}")
+    
+    def plot_q40_metrics(self):
+        """Plot % clusters with Q >= Q40 if available"""
+        print("[INFO] Generating Q40 plots...")
+        
+        if self.imaging_df is None:
+            return
+        
+        q40_cols = [col for col in self.imaging_df.columns if 'Q40' in col or 'Q>=40' in col]
+        
+        if not q40_cols:
+            print("[WARN] No Q40 metrics available")
+            return
+        
+        for metric in q40_cols:
+            try:
+                if not self._has_valid_data(self.imaging_df[metric], metric):
+                    continue
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                lanes = sorted(self.imaging_df['Lane'].unique())
+                plotted_any = False
+                
+                for lane in lanes:
+                    lane_data = self.imaging_df[self.imaging_df['Lane'] == lane]
+                    cycle_mean = lane_data.groupby('Cycle')[metric].mean()
+                    
+                    if not self._has_valid_data(cycle_mean, f"{metric}_lane{lane}"):
+                        continue
+                    
+                    color = LANE_COLORS.get(lane, f'C{lane-1}')
+                    ax.plot(cycle_mean.index, cycle_mean.values, 
+                           label=f'Lane {lane}', linewidth=2.5, alpha=0.8, color=color, marker='o', markersize=4)
+                    plotted_any = True
+                
+                if not plotted_any:
+                    plt.close(fig)
+                    continue
+                
+                ax.set_xlabel('Cycle', fontsize=11, fontweight='bold')
+                ax.set_ylabel(metric, fontsize=11, fontweight='bold')
+                ax.set_title(f'{metric} by Cycle', fontsize=13, fontweight='bold')
+                ax.legend(loc='best', framealpha=0.95, ncol=4)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.set_axisbelow(True)
+                fig.tight_layout()
+                
+                description = f"Percentage of clusters achieving Q≥40 quality score by cycle indicates high-confidence base calling performance."
+                self.plot_images.append((f'Q40 Metrics', description, self._save_fig_to_image(fig)))
+                print(f"  ✓ Created Q40 metrics plot")
+            except Exception as e:
+                print(f"[WARN] Could not create Q40 plot: {e}")
+    
+    def generate_pdf_report(self, output_pdf):
+        """Generate comprehensive PDF report with all plots"""
+        print("[INFO] Generating PDF report...")
+        
+        doc = SimpleDocTemplate(output_pdf, pagesize=landscape(letter),
+                               rightMargin=0.5*inch, leftMargin=0.5*inch,
+                               topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0072B2'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#0072B2'),
+            spaceAfter=6,
+            spaceBefore=6,
+            fontName='Helvetica-Bold'
+        )
+        
+        description_style = ParagraphStyle(
+            'Description',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#333333'),
+            spaceAfter=12,
+            alignment=TA_LEFT,
+            fontName='Helvetica'
+        )
+        
+        # Title page
+        story.append(Spacer(1, 1.5*inch))
+        story.append(Paragraph("Illumina Sequencing Run", title_style))
+        story.append(Paragraph("Quality Control Report", title_style))
+        story.append(Spacer(1, 0.7*inch))
+        
+        # Run information overview table
+        run_info_data = [
+            ['Run Folder:', self.run_folder.name],
+            ['Analysis Date:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
         ]
-        col_data2 = [
-            ('Reads / sample – mean',   fmt_num(demux['# Reads'].mean())),
-            ('Reads / sample – median', fmt_num(demux['# Reads'].median())),
-            ('Reads / sample – min',    fmt_num(demux['# Reads'].min())),
-            ('Reads / sample – max',    fmt_num(demux['# Reads'].max())),
-        ]
+        
+        try:
+            run_info = self.run_metrics.run_info()
+            flowcell_barcode = run_info.flowcell().barcode()
+            total_cycles = run_info.total_cycles()
+            num_reads = run_info.reads().size()
+            
+            run_info_data.extend([
+                ['Flowcell Barcode:', flowcell_barcode],
+                ['Total Cycles:', str(total_cycles)],
+                ['Number of Reads:', str(num_reads)],
+            ])
+            
+            for i in range(num_reads):
+                read = run_info.reads()[i]
+                read_info = f"{read.total_cycles()} cycles"
+                if read.is_index():
+                    read_info += " (Index)"
+                run_info_data.append([f'Read {i+1}:', read_info])
+        except Exception as e:
+            print(f"[WARN] Could not load full run info: {e}")
+        
+        try:
+            tile_df = self._get_tile_metrics()
+            if tile_df is not None and len(tile_df) > 0:
+                total_clusters = tile_df['Cluster Count'].sum()
+                clusters_pf = tile_df['Cluster Count PF'].sum()
+                
+                run_info_data.append(['Total Clusters:', f'{total_clusters:.0f}'])
+                run_info_data.append(['Clusters Passing Filter:', f'{clusters_pf:.0f}'])
+                
+                if total_clusters > 0:
+                    pf_pct = (clusters_pf / total_clusters * 100)
+                    run_info_data.append(['% Clusters Passing Filter:', f'{pf_pct:.1f}%'])
+        except Exception as e:
+            print(f"[WARN] Could not add cluster info: {e}")
+        
+        info_table = Table(run_info_data, colWidths=[2.5*inch, 5*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f4f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Courier'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        story.append(info_table)
+        story.append(PageBreak())
+        
+        # Add all plots - one per page
+        for plot_title, plot_description, plot_data in self.plot_images:
+            story.append(Paragraph(plot_title, heading_style))
+            story.append(Paragraph(plot_description, description_style))
+            img = Image(BytesIO(plot_data), width=9*inch, height=5.4*inch, kind='proportional')
+            story.append(img)
+            story.append(PageBreak())
+        
+        # Build PDF
+        doc.build(story)
+        print(f"  ✓ Created PDF report: {output_pdf}")
+    
+    def generate_all_plots(self, output_pdf):
+        """Generate all available QC plots and create PDF"""
+        print("\n" + "=" * 80)
+        print("GENERATING QC PLOTS")
+        print("=" * 80 + "\n")
+        
+        self.plot_summary_page()
+        self.plot_cluster_distribution()
+        self.plot_overall_cluster_pie()
+    #    self.plot_lane_balance()
+        self.plot_percent_pf_by_lane()
+        #self.plot_cluster_density_heatmap()
+        self.plot_qscore_by_cycle()
+        #self.plot_intensity_distribution()
+        #self.plot_phasing_prephasing()
+        #self.plot_fwhm_metrics()
+        #self.plot_base_composition()
+        #self.plot_q40_metrics()
+        self.generate_pdf_report(output_pdf)
+        
+        print("\n" + "=" * 80)
+        print("QC PLOT GENERATION COMPLETE")
+        print("=" * 80)
+        print(f"\nPDF report saved to: {output_pdf}")
+        print(f"Total plots generated: {len(self.plot_images)}")
+        print()
 
-        y = 0.78
-        for (l1,v1),(l2,v2) in zip(col_data, col_data2):
-            stats_ax.text(0.03, y, l1, fontsize=9, color=TEXT_MD)
-            stats_ax.text(0.25, y, v1, fontsize=9, color=TEXT_DK, fontweight='bold')
-            stats_ax.text(0.53, y, l2, fontsize=9, color=TEXT_MD)
-            stats_ax.text(0.76, y, v2, fontsize=9, color=TEXT_DK, fontweight='bold')
-            stats_ax.axhline(y-0.05, xmin=0.02, xmax=0.98, color=GREY_MID,
-                             linewidth=0.5, transform=stats_ax.transAxes)
-            y -= 0.16
-
-        # Low-depth warning
-        low_n = (demux['# Reads'] < s.get('avg_reads',0)*0.5).sum()
-        if low_n > 0:
-            stats_ax.text(0.03, 0.12,
-                f"⚠  {low_n} sample(s) have fewer than 50% of average reads — "
-                "consider re-sequencing or checking library QC.",
-                fontsize=8.5, color=RED, va='center')
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PAGE 4 – QC Flags & Top Unknown Barcodes
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def _page_flags(self, pdf):
-        s = self.summary
-        fig = plt.figure(figsize=(11, 8.5), facecolor=WHITE)
-        self._add_header(fig, 'QC Flags & Barcode Analysis', 4)
-
-        # ── QC checklist ───────────────────────────────────────────────────
-        chk_ax = fig.add_axes([0.04, 0.62, 0.42, 0.30])
-        chk_ax.set_axis_off(); chk_ax.set_xlim(0,1); chk_ax.set_ylim(0,1)
-        rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                               linewidth=1,edgecolor=GREY_MID,
-                               facecolor=GREY_BG,transform=chk_ax.transAxes)
-        chk_ax.add_patch(rect)
-        chk_ax.text(0.05, 0.93, 'QC Checklist', fontsize=11, fontweight='bold',
-                    color=NAVY, va='top')
-
-        checks = [
-            ('Assigned reads ≥ 80%',     s.get('assigned_pct',0),      0.80, False,
-             'Low: check barcode design or sample loading'),
-            ('Undetermined reads < 20%',  s.get('undetermined_pct',0),  0.20, True,
-             'High: barcode mismatch or index contamination'),
-            ('Avg Q30 ≥ 80%',             s.get('avg_q30',0),           0.80, False,
-             'Low: sequencing chemistry or cluster density issue'),
-            ('Perfect index rate ≥ 85%',  s.get('perfect_index_mean',0),0.85, False,
-             'Low: index read errors; may increase undetermined reads'),
-        ]
-        if 'avg_adapter_pct' in s:
-            checks.append(
-                ('Avg adapter content < 1%', s['avg_adapter_pct'],      0.01, True,
-                 'High: short inserts or library prep problem')
-            )
-
-        y = 0.76
-        for label, val, thr, inv, reason in checks:
-            passed = (val < thr) if inv else (val >= thr)
-            icon   = '✔' if passed else '✗'
-            col    = TEAL_LT if passed else RED
-            chk_ax.text(0.04, y, icon,   fontsize=12, color=col, va='center')
-            chk_ax.text(0.12, y, label,  fontsize=9,  color=TEXT_DK, va='center')
-            if not passed:
-                chk_ax.text(0.12, y-0.065, f'↳ {reason}', fontsize=7.5,
-                            color=RED, va='center', style='italic')
-            y -= 0.155 if not passed else 0.13
-
-        # ── Perfect index rate per-sample bars ────────────────────────────
-        if 'demux_df' in s:
-            pir_ax = fig.add_axes([0.55, 0.62, 0.40, 0.30])
-            df = s['demux_df'].copy()
-            df_sorted = df.sort_values('% Perfect Index Reads').reset_index(drop=True)
-            top_show = min(20, len(df_sorted))
-            df_show  = df_sorted.head(top_show)
-            cols = [RED if v < 0.85 else TEAL_LT
-                    for v in df_show['% Perfect Index Reads']]
-            pir_ax.barh(range(len(df_show)),
-                        df_show['% Perfect Index Reads']*100,
-                        color=cols, edgecolor=WHITE, linewidth=0.3)
-            pir_ax.axvline(85, color=AMBER, linestyle=':', linewidth=1.5,
-                           label='Target 85%')
-            pir_ax.set_yticks(range(len(df_show)))
-            pir_ax.set_yticklabels(df_show['SampleID'], fontsize=7)
-            pir_ax.set_xlabel('Perfect Index Rate (%)', fontsize=9)
-            pir_ax.set_title(f'Perfect Index Rate — Lowest {top_show} Samples',
-                             fontsize=10, fontweight='bold', color=NAVY, pad=6)
-            pir_ax.legend(fontsize=8)
-            pir_ax.xaxis.set_major_locator(plt.MaxNLocator(7))
-
-        # ── Unknown barcodes table ─────────────────────────────────────────
-        if 'unknown_df' in s:
-            unk = s['unknown_df']
-            unk_ax = fig.add_axes([0.04, 0.08, 0.91, 0.50])
-            unk_ax.set_axis_off(); unk_ax.set_xlim(0,1); unk_ax.set_ylim(0,1)
-            rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                                   linewidth=1,edgecolor=GREY_MID,
-                                   facecolor=GREY_BG,transform=unk_ax.transAxes)
-            unk_ax.add_patch(rect)
-
-            total_u  = unk['# Reads'].sum()
-            total_a  = s.get('total_reads', total_u)
-            unk_pct  = total_u / total_a if total_a else 0
-
-            unk_ax.text(0.03, 0.94,
-                        f'Top Unknown Barcodes — {fmt_num(total_u)} undetermined reads '
-                        f'({fmt_pct(unk_pct)} of total)',
-                        fontsize=10, fontweight='bold', color=NAVY, va='top')
-            unk_ax.text(0.03, 0.86,
-                        'These barcodes were detected but could not be matched to any sample. '
-                        'Dominant unknown barcodes may indicate a missing sample, index swap, '
-                        'or a sample-sheet error.',
-                        fontsize=8, color=TEXT_MD, va='top')
-
-            # Column headers
-            cols_def = [
-                ('Rank',          0.03, 0.06),
-                ('Index 1',       0.08, 0.18),
-                ('Index 2',       0.27, 0.18),
-                ('Reads',         0.46, 0.14),
-                ('% of Unknown',  0.61, 0.15),
-                ('% of All Reads',0.77, 0.20),
-            ]
-            hdr_y = 0.75
-            for hdr, x, _ in cols_def:
-                unk_ax.add_patch(FancyBboxPatch(
-                    (x, hdr_y-0.04), _-0.005, 0.08,
-                    boxstyle='round,pad=0.005', linewidth=0,
-                    facecolor=NAVY, transform=unk_ax.transAxes))
-                unk_ax.text(x+0.005, hdr_y, hdr, fontsize=8,
-                            color=WHITE, fontweight='bold', va='center')
-
-            top_show = min(12, len(unk))
-            row_h = 0.055
-            for i, (_, row) in enumerate(unk.head(top_show).iterrows()):
-                ry = hdr_y - 0.04 - (i+1)*row_h
-                bg = '#EDF2F7' if i % 2 == 0 else WHITE
-                unk_ax.add_patch(FancyBboxPatch(
-                    (0.02, ry-0.005), 0.96, row_h-0.004,
-                    boxstyle='round,pad=0.002', linewidth=0,
-                    facecolor=bg, transform=unk_ax.transAxes))
-                vals = [
-                    str(i+1),
-                    row.get('index',''),
-                    row.get('index2',''),
-                    fmt_num(row['# Reads']),
-                    fmt_pct(row['% of Unknown Barcodes']),
-                    fmt_pct(row['% of All Reads'], decimals=3),
-                ]
-                for val, (_, x, w) in zip(vals, cols_def):
-                    unk_ax.text(x+0.005, ry + row_h*0.38, val,
-                                fontsize=8, color=TEXT_DK, va='center')
-        else:
-            # No unknown barcodes data
-            no_ax = fig.add_axes([0.04, 0.08, 0.91, 0.50])
-            no_ax.set_axis_off()
-            no_ax.text(0.5, 0.5, 'Top_Unknown_Barcodes.csv not found.',
-                       ha='center', va='center', fontsize=11, color=TEXT_MD)
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PAGE 5 – Glossary & Further Reading
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def _page_glossary(self, pdf):
-        fig = plt.figure(figsize=(11, 8.5), facecolor=WHITE)
-        self._add_header(fig, 'Understanding Your Sequencing Report', 5)
-
-        # ── Intro sentence ────────────────────────────────────────────────
-        intro_ax = fig.add_axes([0.04, 0.87, 0.92, 0.055])
-        intro_ax.set_axis_off(); intro_ax.set_xlim(0,1); intro_ax.set_ylim(0,1)
-        intro_ax.text(0.0, 0.5,
-            'This page explains the key terms used in this report. '
-            'No prior knowledge of sequencing is needed — if anything is still unclear, '
-            'please contact us and we will be happy to help.',
-            fontsize=9, color=TEXT_MD, va='center', linespacing=1.6)
-
-        # ── Helper to draw a glossary card ────────────────────────────────
-        def gcard(fig, x, y, w, h, term, emoji, definition, threshold=None):
-            ax = fig.add_axes([x, y, w, h])
-            ax.set_axis_off(); ax.set_xlim(0,1); ax.set_ylim(0,1)
-            rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.03',
-                                   linewidth=1.2, edgecolor=TEAL,
-                                   facecolor=WHITE, transform=ax.transAxes)
-            ax.add_patch(rect)
-            # Accent bar on left
-            ax.add_patch(FancyBboxPatch((0,0),0.045,1,boxstyle='square,pad=0',
-                                         linewidth=0, facecolor=TEAL,
-                                         transform=ax.transAxes))
-            ax.text(0.07, 0.80, f'{emoji}  {term}',
-                    fontsize=10, fontweight='bold', color=NAVY, va='top')
-            ax.text(0.07, 0.54, definition,
-                    fontsize=8, color=TEXT_MD, va='top', linespacing=1.55,
-                    wrap=True)
-            if threshold:
-                ax.text(0.07, 0.10, f'✔  {threshold}',
-                        fontsize=7.5, color=TEAL_LT, va='bottom', fontweight='bold')
-
-        # ── 6 glossary cards in a 3 × 2 grid ─────────────────────────────
-        cw, ch = 0.285, 0.195
-        gap_x, gap_y = 0.025, 0.018
-        x0, y0 = 0.04, 0.645
-
-        cards = [
-            ('Total Clusters', '',
-             'A "cluster" is a single DNA fragment that has been amplified into a bright '
-             'spot on the flowcell. Each cluster is sequenced independently. '
-             'More clusters = more data. Typical runs produce tens to hundreds of millions.',
-             'More is generally better — depends on your experiment'),
-            ('% Bases ≥ Q30', '',
-             'Every base (A, T, C, G) the sequencer calls is given a quality score (Q-score). '
-             'Q30 means there is a 1-in-1000 chance of error — i.e. 99.9% accuracy. '
-             'This is the single most important quality metric for most analyses.',
-             'Target: ≥ 80% of all bases should reach Q30'),
-            ('Assigned Reads', '',
-             'Each sample in a sequencing run is labelled with one or two short unique DNA tags called '
-             'barcode or index. After sequencing, reads are matched to their sample by '
-             'this barcode or barcode combination. "Assigned" reads are those successfully matched.',
-             'Target: ≥ 80% of reads assigned to a sample'),
-            ('Undetermined Reads', '',
-             'Reads whose barcode could not be matched to any sample. A small fraction '
-             '(< 5%) is normal. Higher values may mean a sample was accidentally left off '
-             'the sample sheet, or barcodes were confused during library preparation.',
-             'Concern: > 20% undetermined warrants investigation'),
-            ('Adapter Content', '',
-             'Adapters are short synthetic sequences added during library preparation to '
-             'allow DNA to attach to the flowcell. If a DNA fragment is very short, the '
-             'sequencer may read into the adapter. These bases are artefacts, not real biology.',
-             'Target: < 1% adapter bases per sample'),
-            ('Perfect Index Rate', '',
-             'The percentage of reads where the barcode matched its expected sequence '
-             'with zero errors. Even one mismatched base can cause a read to be assigned '
-             'to the wrong sample or discarded. Higher rates mean cleaner sample separation.',
-             'Target: ≥ 85% perfect index matches'),
-        ]
-
-        positions = [
-            (x0,               y0),
-            (x0 + cw + gap_x,  y0),
-            (x0 + 2*(cw+gap_x),y0),
-            (x0,               y0 - ch - gap_y),
-            (x0 + cw + gap_x,  y0 - ch - gap_y),
-            (x0 + 2*(cw+gap_x),y0 - ch - gap_y),
-        ]
-        for (term, emoji, defn, thr), (px, py) in zip(cards, positions):
-            gcard(fig, px, py, cw, ch, term, emoji, defn, thr)
-
-        # ── Further reading section ────────────────────────────────────────
-        link_ax = fig.add_axes([0.04, 0.07, 0.92, 0.22])
-        link_ax.set_axis_off(); link_ax.set_xlim(0,1); link_ax.set_ylim(0,1)
-        rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                               linewidth=1, edgecolor=GREY_MID,
-                               facecolor=GREY_BG, transform=link_ax.transAxes)
-        link_ax.add_patch(rect)
-
-        link_ax.text(0.02, 0.90, '  Further Reading & Resources',
-                     fontsize=10, fontweight='bold', color=NAVY, va='top')
-        link_ax.text(0.02, 0.75,
-            'The following Illumina resources explain the technology and quality metrics '
-            'in more depth — all are freely available online:',
-            fontsize=8.5, color=TEXT_MD, va='top')
-
-        links = [
-            ('How Illumina Sequencing Works  (short video + overview)',
-             'illumina.com/science/technology/next-generation-sequencing/sequencing-technology.html'),
-            ('Understanding Sequencing Data Quality',
-             'illumina.com/science/technology/next-generation-sequencing/plan-experiments/quality-scores.html'),
-            ('Sequencing Coverage & Depth — how much data do you need?',
-             'illumina.com/science/technology/next-generation-sequencing/plan-experiments/coverage-depth-replicates.html'),
-            ('BCLConvert Output Files — what each file contains',
-             'support.illumina.com/sequencing/sequencing_software/bcl-convert/documentation.html'),
-            ('Interpreting Run Quality Metrics (BaseSpace guide)',
-             'support.illumina.com/help/BaseSpace_OLH_009008/Content/Source/Informatics/BS/QualityScoreFilter_swBS.htm'),
-        ]
-
-        y = 0.55
-        for title_txt, url in links:
-            link_ax.text(0.025, y, '→', fontsize=9, color=TEAL, va='center', fontweight='bold')
-            link_ax.text(0.05,  y, title_txt, fontsize=8.5, color=TEXT_DK, va='center',
-                         fontweight='bold')
-            link_ax.text(0.05,  y - 0.095, url, fontsize=7.5, color=TEAL, va='center',
-                         style='italic')
-            y -= 0.175
-
-        pdf.savefig(fig, bbox_inches='tight')
-        plt.close(fig)
-
-    # ── Utility ───────────────────────────────────────────────────────────────
-    def _note_box(self, fig, x, y, w, h, text):
-        ax = fig.add_axes([x, y, w, h])
-        ax.set_axis_off(); ax.set_xlim(0,1); ax.set_ylim(0,1)
-        rect = FancyBboxPatch((0,0),1,1,boxstyle='round,pad=0.02',
-                               linewidth=0.8,edgecolor=GREY_MID,
-                               facecolor=GREY_BG,transform=ax.transAxes)
-        ax.add_patch(rect)
-        ax.text(0.02, 0.5, text, fontsize=7.5, color=TEXT_MD, va='center',
-                linespacing=1.4)
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Generate a concise Illumina sequencing QC report (≤4 pages).',
-    )
-    parser.add_argument('-i', '--input',  required=True,
-                        help='Folder containing BCLConvert output files')
-    parser.add_argument('-o', '--output', required=True,
-                        help='Output PDF path')
-    args = parser.parse_args()
-
-    input_path = Path(args.input)
-    if not input_path.is_dir():
-        print(f"Error: {args.input} is not a directory", file=sys.stderr)
+    if len(sys.argv) != 3:
+        print("Usage: python interop_more.py <run_folder> <output_pdf>")
+        print("\nExample:")
+        print("  python interop_more.py /data/210101_A00000_0001_AHXXXX ./QC_Report.pdf")
         sys.exit(1)
-
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-
+    
+    run_folder = sys.argv[1]
+    output_pdf = sys.argv[2]
+    
+    if not os.path.exists(run_folder):
+        print(f"[ERROR] Run folder does not exist: {run_folder}")
+        sys.exit(1)
+    
+    if not os.path.exists(os.path.join(run_folder, "InterOp")):
+        print(f"[ERROR] InterOp folder not found in: {run_folder}")
+        sys.exit(1)
+    
+    output_dir = os.path.dirname(output_pdf)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
     try:
-        run_parser = SequencingRunParser(input_path)
-        data = run_parser.parse_all()
-        ReportGenerator(data).generate(args.output)
-        print(f"\n✓ Done — {args.output}")
-    except Exception as exc:
+        plotter = InterOpQCPlotter(run_folder)
+        plotter.generate_all_plots(output_pdf)
+    except Exception as e:
+        print(f"\n[ERROR] Failed to generate plots: {e}")
         import traceback
-        print(f"\n✗ Failed: {exc}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
+    # this is interop_more - cluster_file is output -  script=p+"/scripts/interop_more.py", this is executed and will be shortened

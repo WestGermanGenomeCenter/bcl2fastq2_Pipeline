@@ -103,14 +103,10 @@ def detect_instrument(runfolder: Path, recipe: "dict | None",
         serial = parts[1]
 
     # RunInfo / RunParameters XML is the only reliable source for model
-    if run_info:
-        if run_info.get("serial"):
-            serial = run_info["serial"]
-        if run_info.get("instrument_type"):
-            return run_info["instrument_type"], serial
+    # not used anymore
 
     # No reliable instrument model source available
-    return "N/A", serial
+    #return "N/A", serial
 
 
 def load_run_info(runfolder: Path) -> "dict | None":
