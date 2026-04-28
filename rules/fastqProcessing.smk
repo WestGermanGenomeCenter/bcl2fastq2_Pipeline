@@ -146,6 +146,10 @@ def getFastQCs(wildcards):
     if config["kaiju"]["kaiju_active"]:
         fastQCs.extend(expand("{out}/kaiju/kaiju_species_table_{file}.txt",out=outputfolder,file=sample_names))
 
+    if config["rustqc"]["rustqc_active"]:
+        fastQCs.extend(expand("{out}/rustqc/featurecounts/{file}.biotype_counts.tsv",out=outputfolder,file=getSample_names_post_mapping()))
+#         tsv_out=outputfolder+"/rustqc/featurecounts/{file}.biotype_counts.tsv",
+
 
     if config["mapping"]["stringtie_on"]:      
         fastQCs.extend(expand("{out}/stringtie/transcripts_{file}.gtf",out=outputfolder,file=getSample_names_post_mapping())) # test this 
@@ -1036,6 +1040,46 @@ rule biobloom:
         nice biobloomcategorizer -f {params.filter_string} {params.fastq_file} -t {resources.threads} -p {params.output_prefix} >> {log} 2>&1
   
         """
+
+
+# rustqc. for now optional, and needs sambamba pre-processing. but seems nice
+#could be used instead of qualimap, rseqc, dupradar and more.
+
+
+rule rustqc:
+    input:
+        bams =outputfolder + "/star/{file}_Aligned.sortedByCoord.out.bam" if not config["umi_tools"]["umi_tools_active"] else outputfolder+"/star/{file}_deduped.Aligned.sortedByCoord.out.bam"
+    params:
+        doublet_bams=temp(outputfolder + "/rustqc/{file}.bam"),
+        gtf=config["mapping"]["gtf_file"],
+        folder=outputfolder + "/rustqc/",
+        # for now just let it auto-detect or fail, 
+        # once this will replace older tools, the pe and stranded params need their own section
+        # stranded=config[""]
+
+    output:
+        tsv_out=outputfolder+"/rustqc/featurecounts/{file}.biotype_counts.tsv",
+    log:
+        outputfolder+"/logs/rustqc/rustqc_log_{file}.log"
+    conda:
+        p+"/envs/rustqc.yaml"
+    message: "running rustqc..."
+    resources:
+        threads=lambda wildcards, attempt: attempt * 8,
+        time_hrs=lambda wildcards, attempt: attempt * 2,
+        mem_gb=lambda wildcards, attempt: attempt * 24
+
+    shell:
+        """
+        rm -f {params.doublet_bams}
+        sambamba markdup {input.bams} {params.doublet_bams} -t {resources.threads} 2>{log}
+        cd {params.folder} 2>{log}
+        rustqc rna -t {resources.threads} --gtf {params.gtf} {params.doublet_bams}  2>{log}
+        """
+
+
+
+
 # deactivete this rule to make featurecounts always the tool of choice
 
 #f not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts

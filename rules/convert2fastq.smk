@@ -345,7 +345,7 @@ rule interop_plots:
     params:
         tilt_script=p+"/scripts/tilt_report.py",
         tilt_pdf=config["demux"]["OutputFolder"]+"/interop_plots/TiltReport.pdf",
-        script=p+"/scripts/interop_more.py",
+        script=p+"/scripts/interop_minimal.py",
         # interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
         output_dir=config["demux"]["OutputFolder"]+"/interop_plots",

@@ -71,6 +71,12 @@ mapping: # transcriptome mapping happens here with STAR
   rmats_paired: "single --libType fr-secondstrand" # Type of read used in the analysis: either "paired" for paired-end data or "single" for single-end data. Default: paired +   --libType {fr-unstranded,fr-firststrand,fr-secondstrand}                         Library type. Use fr-firststrand or fr-secondstrand for strand-specific data. Only relevant to the prep step, not the post step. Default: fr-unstranded
   rmats_group_file: "/gpfs/project/projects/bmfz_gtl/projects/1399/star/groups.txt"
 
+# EXPERIMENTAL AI VIBECODED TOOLS SECTION
+# USE WITH CAUTION
+# USE OTHER TOOLS TO CHECK RESULTS
+rustqc:
+  rustqc_active: True
+
 
 # preseq is a tool to estimate sequencing saturation # this can be useful to check if more sequencing would be helpful to capture or if a saturation is already reached
 preseq:
