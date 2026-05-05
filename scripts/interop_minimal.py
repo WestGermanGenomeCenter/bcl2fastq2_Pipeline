@@ -252,7 +252,7 @@ PER-LANE BREAKDOWN
             
             ax.text(0.05, 0.95, summary_text, transform=ax.transAxes,
                    fontsize=10, verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.3))
             
             fig.tight_layout()
             description = "Overall run summary showing cluster statistics and per-lane quality breakdown."
@@ -514,7 +514,7 @@ PER-LANE BREAKDOWN
         if self.imaging_df is None:
             return
         
-        metrics = ['%>= Q30', 'Error Rate']
+        metrics = ['%>= Q30']
         available_metrics = [m for m in metrics if m in self.imaging_df.columns]
         
         if not available_metrics:
@@ -923,7 +923,7 @@ PER-LANE BREAKDOWN
         self.plot_cluster_distribution()
         self.plot_overall_cluster_pie()
     #    self.plot_lane_balance()
-        self.plot_percent_pf_by_lane()
+        #self.plot_percent_pf_by_lane()
         #self.plot_cluster_density_heatmap()
         self.plot_qscore_by_cycle()
         #self.plot_intensity_distribution()

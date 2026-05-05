@@ -844,8 +844,8 @@ rule pca_plot:
     shell:
         """
         Rscript --vanilla --no-warnings {params.scriptr} {input.counts_file} {params.dir} 2>{log}
-        python {params.script} {output.counts_file} {params.pdf} 2>{log}
-        python {params.html_script} {output.counts_file} {params.html_out} 2>{log}
+        python {params.script} {input.counts_file} {params.pdf} 2>{log}
+        python {params.html_script} {input.counts_file} {params.html_out} 2>{log}
         """
 
 

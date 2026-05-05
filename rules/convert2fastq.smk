@@ -345,7 +345,7 @@ rule interop_plots:
     params:
         tilt_script=p+"/scripts/tilt_report.py",
         tilt_pdf=config["demux"]["OutputFolder"]+"/interop_plots/TiltReport.pdf",
-        script=p+"/scripts/interop_minimal.py",
+        script=p+"/scripts/test.py",
         # interop_dir=config["interop_plots"]["interop_binaries_dir"],
         log_dir=config["demux"]["OutputFolder"]+"/logs/interop/",
         output_dir=config["demux"]["OutputFolder"]+"/interop_plots",
@@ -371,7 +371,7 @@ rule interop_plots:
         # add the get_cluster_numbers.py script, redirect errors to /dev/null
         # alternatively to the script, one can also interop_plot_q_score path/to/runfolder | gnuplot. the interop package is already in anaconda: illumina-interop
         # interop via pip wont install on the hpc, so conda install must be enough for now. supressing all errors because of this - should work on any modern machine
-        python {params.script} -i {params.raw_files_place} -o {params.cluster_file}  >> /dev/null 2>&1
+        python {params.script} {params.raw_files_place} {params.cluster_file}  >> /dev/null 2>&1
         python {params.cluster_pdf_script} {params.raw_files_place} {params.cluster_pdf} >> {log} 2>&1
         python {params.demux_py} -i {params.reports_dir} -o {params.demux_pdf} >> {log} 2>&1
         python {params.tilt_script} {params.raw_files_place} {params.tilt_pdf} >> {log} 2>&1

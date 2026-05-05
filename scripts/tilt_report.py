@@ -89,25 +89,21 @@ def warn_skip(name: str, reason: str = "file not found"):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_instrument(runfolder: Path, recipe: "dict | None",
-                      run_info: "dict | None") -> tuple:
-    """
-    Returns (model_string, serial_string).
-    Only RunInfo.xml / RunParameters.xml is used as a reliable model source.
-    Serial is extracted from the runfolder name but model is NOT inferred
-    from prefix (too unreliable across firmware/naming conventions).
-    """
-    # Serial from runfolder name (YYMMDD_<SERIAL>_RUN_FLOWCELL)
-    serial = "N/A"
-    parts  = runfolder.name.split("_")
-    if len(parts) >= 2:
-        serial = parts[1]
+                      run_info: "dict | None") -> tuple[str, str]:
 
-    # RunInfo / RunParameters XML is the only reliable source for model
-    # not used anymore
+    # Serial from folder name
+    serial = "Not given"
+    parts = runfolder.name.split("_")
+    if len(parts) >= 4:
+        serial = parts[2]
 
-    # No reliable instrument model source available
-    #return "N/A", serial
+    instrument = parts[4]
 
+    if run_info:
+        instrument = run_info.get("instrument_type", "N/A")
+        serial = run_info.get("serial", serial)
+
+    return instrument, serial
 
 def load_run_info(runfolder: Path) -> "dict | None":
     """Parse RunInfo.xml or RunParameters.xml for instrument/run metadata."""
