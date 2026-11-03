@@ -94,10 +94,10 @@ def detect_instrument(runfolder: Path, recipe: "dict | None",
     # Serial from folder name
     serial = "Not given"
     parts = runfolder.name.split("_")
-    if len(parts) >= 4:
+    if len(parts) >= 2:
         serial = parts[2]
 
-    instrument = parts[4]
+        instrument = parts[1]
 
     if run_info:
         instrument = run_info.get("instrument_type", "N/A")
@@ -1090,7 +1090,7 @@ def build_report(runfolder: Path, output_pdf: Path):
     # ── PAGE 1: OVERVIEW ──────────────────────────────────────────────────────
     story += [sp(2),
               Paragraph("Run QC Report", st["title"]),
-              Paragraph(f"Instrument: {instrument}  |  Serial: {serial}" if instrument != "N/A" else f"Serial: {serial}", st["sub"]),
+              Paragraph(f"  Serial: {serial}" if instrument != "N/A" else f"Serial: {serial}", st["sub"]),
               sp(),
               HRFlowable(width="100%", thickness=1, color=RL_ACCENT),
               sp()]
@@ -1148,11 +1148,9 @@ def build_report(runfolder: Path, output_pdf: Path):
     info_rows = [
         ["Run Folder",  run_id],
         ["Run Date",    run_date],
-        ["Instrument",  instrument if instrument != "N/A" else "N/A  (RunInfo.xml not found)"],
         ["Serial No.",  serial],
         ["Run Number",  run_num],
         ["Flow Cell ID",    fc_display],
-        ["Detection Note",  detection_note],
         ["Recipe",      recipe["name"] if recipe else "N/A"],
         ["Description", recipe["description"] if recipe else "N/A"],
     ]

@@ -201,9 +201,45 @@ if not config["skip_demux"]["skip_demux_active"]:
             {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} {params.additionalOptions}  --output-directory {params.output_dir} --force  --bcl-num-conversion-threads {resources.threads} >> {log} 2>&1
             cp -f {input[0]} {params.output_dir} >> {log} 2>&1
             mkdir -p {params.out_fastqs_dir} && mv {params.outfastqs} {params.out_fastqs_dir} >> {log} 2>&1
-            mv -f {params.undetermined} {params.output_dir} 2>/dev/null
+            if [ -e "{params.undetermined}" ]; then
+                mv -f "{params.undetermined}" "{params.output_dir}/" 2>/dev/null
+            fi
+
             mv -f {params.Logs_path} {params.bcl_log_path} >> {log} 2>&1
             """
+
+# idea: make all steps after demuxing into new rule, so that the demux itself never fails if the commands after that make problems
+# still need to create the right pre / post hooks - ie flag files 
+#rule cleanup_demux:
+#    input:
+#        demux2Output = config["demux"]["OutputFolder"]+"/Reports/Adapter_Metrics.csv"
+#    params:
+#        infolder = getParentDir,
+#        additionalOptions=config["demux"]["options"],
+#        bcl_convert_path = config["demux"]["bcl_convert_path"],
+#        outfastqs = config["demux"]["OutputFolder"] + "/*.fastq.gz", # we want to exclude the undetermined maybe here, maybe after the multiqc
+#        output_dir = config["demux"]["OutputFolder"],
+#        undetermined = config["demux"]["OutputFolder"]  + "/untrimmed_fastq/" + "Undetermined*.fastq.gz",
+#        out_fastqs_dir = config["demux"]["OutputFolder"] + "/untrimmed_fastq/",
+#        Logs_path= config["demux"]["OutputFolder"] + "/Logs",
+#        bcl_log_path=config["demux"]["OutputFolder"] + "/logs/bcl_convert_logs"
+#        log:
+#            config["demux"]["OutputFolder"]+"/logs/e_after_bcl.log"
+#        output:
+#            demux_post_done = config["demux"]["OutputFolder"]+"/Reports/Cleanup_done.flag"
+#        message:
+#            "Running bcl convert"
+#        resources:
+#            threads=lambda wildcards, attempt:  1 + (attempt * 1) ,
+#            time_hrs=lambda wildcards, attempt: attempt * 4,
+#            mem_gb=lambda wildcards, attempt: attempt * 4,
+#        conda:
+#            p+"/envs/demux.yaml"
+#        shell:
+#            """
+#            # this rule only runs after demux is finished: it cleans the dir and moves undetermined if there is any to outputfolder.
+#            """
+
 
 if config["demux"]["use_bcl2fastq"]: # allow miseq also into the mix
     rule bcl2fastq2:

@@ -107,7 +107,7 @@ def getOutput():
         all = list()
         print("It seems like the demuxing run didnt finish properly or the fastq_infiles_list.tx doesnt exist")
     
-    all.extend(expand("{out}/inputfiles_checkpoint_completed.out",out=outputfolder))
+   #  all.extend(expand("{out}/inputfiles_checkpoint_completed.out",out=outputfolder))
     all.extend(expand("{out}/multiqc_report_complete_{prj}.html",out=outputfolder,prj=projectNum))            
 
     return all
