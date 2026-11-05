@@ -16,7 +16,7 @@ outputfolder = config["demux"]["OutputFolder"]
 
 ### include rules ###
 
-include: "qcShort.smk"
+# include: "qcShort.smk"
 include: "pe_processing.smk"
 include: "common.smk"
 include: "qc.smk"
