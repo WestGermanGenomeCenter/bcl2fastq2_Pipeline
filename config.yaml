@@ -11,11 +11,23 @@ demux:
  #       "/gpfs/project/projects/bmfz_gtl/software/bclconvert/scripts/bcl-convert" # bcl-convert Version 00.000.000.4.2.7 
         "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl_convert_436/bcl-convert" # bcl-convert Version 00.000.000.4.3.6 <- bcl-convert is the executable here # / not allowed at the end
   demux_try1_gb: 96 # 96 GB ram for the first demultiplex try with bclconvert is reasonable ; 126 at least for novaseqx
-  use_bcl2fastq: False # use for miseq runs, if bclconvert gives errors
-  bcl2fastq2_path: 
-          "/gpfs/project/projects/bmfz_gtl/software/illumina/bcl2fastq" # <-bcl2fastq is here the executable
-  bcl2fastq_mismatches: 1
-  bcl2fastq_options: "--no-lane-splitting"
+  use_idemux: False # use for miseq runs, if bclconvert gives errors
+  idemux_samplesheet:
+  idemux_i1_start: 11 # fill in correct number here
+  idemux_options: "" # anything else you want to add to the command line: https://github.com/Lexogen-Tools/idemuxcpp#3-running-idemuxcpp
+#
+
+
+# idemux-needs an additional samplesheet
+#The idemux sheet is a single CSV for the whole run, and the rule splits it per pool. pool must equal the Sample_ID that bclconvert used:
+#pool,sample_name,i1
+#Pool1,sampleA,AAAACATGCGTT
+#Pool1,sampleB,AAAATCCCAGTT
+#Pool2,sampleC,GAAAATTTACGC
+#
+#
+
+
 
 # if you did already demultiplex, activate this here. # put all .fastq.gz files into that folder # change outputfolder above and the fastq_folder below accordingly
 skip_demux:

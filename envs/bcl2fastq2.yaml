@@ -5,6 +5,4 @@ channels:
   - http://conda.repo.test.hhu.de/bioconda
   - http://conda.repo.test.hhu.de/main
 dependencies:
-  - libgcc=15.2.0
-  - zlib=1.2.13
-  - gxx_linux-64==15.2.0
+  - idemuxcpp

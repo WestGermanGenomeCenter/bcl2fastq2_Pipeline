@@ -177,10 +177,10 @@ if isSingleEnd() == False:
     
     rule umi_dedup_pe:
         input:
-            outputfolder+"/star/{short}_pe_Aligned.sortedByCoord.out.bam"
+            outputfolder+"/star/{short}_pe_001_Aligned.sortedByCoord.out.bam"
         params:
             out=outputfolder,
-            sorted_bam=outputfolder+"/star/{short}_pe_sorted.Aligned.sortedByCoord.out.bam",
+            sorted_bam=outputfolder+"/star/{short}_pe_001_sorted.Aligned.sortedByCoord.out.bam",
             logfolder=outputfolder+"/logs/umi_tools/"
         log:
             outputfolder+"/logs/umi_tools/{short}_pe.umi_dedup.log"
@@ -426,8 +426,8 @@ if isSingleEnd() == False:
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
         rule umi_extract_pe:
             input:
-                in_1=outputfolder+"/untrimmed_fastq/{short}_R1.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
-                in_2=outputfolder+"/untrimmed_fastq/{short}_R2.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"                
+                in_1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+                in_2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"                
             params:
                 umi_ptrn=lambda wc:config["umi_tools"]["pattern"], # need the lambda pseudo-fun for correct curly bracket in pattern recognition
                 ptrn_2=lambda wc:config["umi_tools"]["pattern2"],
@@ -439,8 +439,8 @@ if isSingleEnd() == False:
             conda:
                 p+"/envs/umi_tools.yaml"
             output:
-                out1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz",
-                out2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz"
+                out1=outputfolder + "/umi_extract/{short}_R1_001.umis-extracted.fastq.gz",
+                out2=outputfolder + "/umi_extract/{short}_R2_001.umis-extracted.fastq.gz"
             shell:
                 """
                 mkdir -p {params.outputf}

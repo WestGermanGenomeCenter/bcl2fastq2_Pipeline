@@ -15,19 +15,11 @@ samplesheet = config["demux"]["SampleSheet"]
 outputfolder = config["demux"]["OutputFolder"]
 
 ### include rules ###
-
-# include: "qcShort.smk"
-include: "pe_processing.smk"
+# common first: provides projectNum, sample_names, isSingleEnd(), getSample_names_post_mapping(), getSamples(), ...
 include: "common.smk"
+include: "pe_processing.smk"
 include: "qc.smk"
-#
-
-sample_names = list()
-if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-    fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
-
+# include: "qcShort.smk"
 
 # Set expected pipeline output
 def getOutput():
@@ -787,7 +779,7 @@ rule Qualimap:
     	mkdir -p {params.qualimap_logfolder} >> {log} 2>&1
     	mkdir -p {params.qualimap_folder} >> {log} 2>&1
     	mkdir -p {params.qualimap_out} >> {log} 2>&1
-    	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} {params.extra_params} --java-mem-size=16G -p strand-specific-forward --outdir {params.qualimap_out} >> {log} 2>&1                  
+    	{params.qualimap_bin_dir}/qualimap rnaseq -bam {input.bams} -gtf {params.gtf} {params.extra_params} --java-mem-size=16G --outdir {params.qualimap_out} >> {log} 2>&1                  
     	chmod -f  ago+rwx -R {output} >> {log} 2>&1  
     	"""
 
