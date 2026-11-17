@@ -19,7 +19,6 @@ outputfolder = config["demux"]["OutputFolder"]
 include: "common.smk"
 include: "pe_processing.smk"
 include: "qc.smk"
-# include: "qcShort.smk"
 
 # Set expected pipeline output
 def getOutput():
@@ -110,7 +109,6 @@ def getFastQCs(wildcards):
     fastQCs.extend(expand("{out}/untrimmed_fastq/{file}.fastq.gz",out=outputfolder,file=sample_names))
     fastQCs.extend(expand("{out}/fastqc_untrimmed/untrimmed_{file}_fastqc.{ext}",out=outputfolder,file=sample_names,ext=["html","zip"]))
     if config["mapping"]["mapping_active"]:
-        #fastQCs.extend(expand("{out}/qualimap/{file}/qualimapReport.html",out=outputfolder,file=sample_names)) # final qualimap output
         fastQCs.extend(expand("{out}/star/{file}_ReadsPerGene.out.tab",out=outputfolder,file=getSample_names_post_mapping()))
         fastQCs.extend(expand("{out}/samtools/{file}_samtools_stats.stats",out=outputfolder,file=getSample_names_post_mapping())) 
         fastQCs.extend(expand("{out}/counts/all.tsv",out=outputfolder))
@@ -140,7 +138,6 @@ def getFastQCs(wildcards):
 
     if config["rustqc"]["rustqc_active"]:
         fastQCs.extend(expand("{out}/rustqc/featurecounts/{file}.biotype_counts.tsv",out=outputfolder,file=getSample_names_post_mapping()))
-#         tsv_out=outputfolder+"/rustqc/featurecounts/{file}.biotype_counts.tsv",
 
 
     if config["mapping"]["stringtie_on"]:      
@@ -274,7 +271,7 @@ if isSingleEnd() == True:
         shell:
             """
             mkdir -p {params.mapping_dir}
-            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
+            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.fastqs} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log >> {log} 2>&1
             chmod -f  ago+rwx -R {output} >> {log} 2>&1
             rm -rf {params.work_dir} >> {log} 2>&1
             """

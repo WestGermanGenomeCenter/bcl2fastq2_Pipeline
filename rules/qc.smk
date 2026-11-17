@@ -1,23 +1,3 @@
-## RSEQC
-import os
-import pandas as pd
-p = os.path.abspath(".")
-sys.path.append(os.path.abspath(os.getcwd())+"/scripts")
-from helper import validateSamplesheet, validateOutput, validateProjectNum
-
-
-configfile: "config.yaml"
-outputfolder = config["demux"]["OutputFolder"]
-
-
-projectNum=validateProjectNum(samplesheet)
-
-sample_names = list()
-if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-    fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
-
 
 rule rseqc_gtf2bed:
     input:

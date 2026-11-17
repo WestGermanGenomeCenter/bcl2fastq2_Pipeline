@@ -14,13 +14,6 @@ configfile: "config.yaml"
 samplesheet = config["demux"]["SampleSheet"]
 outputfolder = config["demux"]["OutputFolder"]
 
-
-sample_names = list()
-if os.path.isfile(outputfolder+"/fastq_infiles_list.tx"):
-    samples_dataframe = pd.read_csv(outputfolder+"/fastq_infiles_list.tx", header=None)
-    fastqs = list(samples_dataframe.iloc[:, 0].values)
-    sample_names = [fastq[:-9] for fastq in fastqs if "_I1_" not in fastq and "_I2_" not in fastq] # now excluding index reads in the sample names list
-
 # Validate input from config
 def validateBefore(outputfolder):
     success = validateSamplesheet(samplesheet)
@@ -29,81 +22,31 @@ def validateBefore(outputfolder):
 
 validRun = validateBefore(outputfolder)
 
-
 def get_pe_pairingsheet():
-    # get samplenamespostmapping, get r1 , get r2 and save all onto a file
-    R1 = list()
-    R2 = list() 
-    pe_samplenames = list ()
-    for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-            only_sample=sample.replace('_R1','_pe')
-            pe_samplenames.append(only_sample)
-        else:
-            R2.append(sample)
-
-    df = pd.DataFrame(list(zip(R1, R2, pe_samplenames)),columns=['read1','read2','pe_samplename'])
-
+    parts = [(s, splitReadTag(s)) for s in sample_names]
+    r1 = {t[0]: s for s, t in parts if t[2] == 1}
+    r2 = {t[0]: s for s, t in parts if t[2] == 2}
+    rows = [(r1[b], r2[b], b + "_pe_001") for b in sorted(r1) if b in r2]
+    df = pd.DataFrame(rows, columns=['read1', 'read2', 'pe_samplename'])
     df.to_csv(outputfolder+"/pe_samples.tsv", sep="\t", index=False)
-
-
-
-def isSingleEnd() -> bool:
-    """
-    Returns wether the fastqs are single-end=True or paired-end=False
-    """
-    R1 = list()
-    R2 = list()
-    for sample in sample_names:
-        if sample.split("_R")[1].startswith("1"):
-            R1.append(sample)
-        else:
-            R2.append(sample)
-    if len(R1)!=len(R2):
-        return True
-    else:
-        return False
-
-
-def getSample_names_post_mapping():
-	if isSingleEnd () == True:
-		return sample_names
-	else:
-		pe_samplenames = list()
-		for sample in sample_names:
-			if "_R" in sample:
-
-				if sample.split("_R")[1].startswith("1"):
-					only_sample=sample.replace('_R1','_pe')
-					pe_samplenames.append(only_sample)
-		return pe_samplenames
-
 
 if isSingleEnd() == False:
 
+    def _pe_mapping_input(wildcards, read):
+        short = wildcards.short
+        if config["sortmerna"]["sortmerna_active"]:
+            return f"{outputfolder}/sortmerna/{short}_R{read}_001_non-ribosomal_rna.fq.gz"
+        if config["umi_tools"]["umi_tools_active"]:
+            return f"{outputfolder}/umi_extract/{short}_R{read}_001.umis-extracted.fastq.gz"
+        if config["cutadapt"]["cutadapt_active"]:
+            return f"{outputfolder}/trimmed/{short}_R{read}_001_trimmed.fastq.gz"
+        return f"{outputfolder}/untrimmed_fastq/{short}_R{read}_001.fastq.gz"
 
     def get_mapping_input_pe1(wildcards):
-        if config["sortmerna"]["sortmerna_active"]:
-            mapping_se_fastq1=outputfolder+"/sortmerna/{short}_R1_001_non-ribosomal_rna.fq.gz" # maybe this works
-        elif config["umi_tools"]["umi_tools_active"]:
-            mapping_se_fastq1=outputfolder + "/umi_extract/{short}_R1_001.fastq.gz"
-        elif config ["cutadapt"]["cutadapt_active"]:
-            mapping_se_fastq1=outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz"
-        else:
-            mapping_se_fastq1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz",
-        return mapping_se_fastq1
+        return _pe_mapping_input(wildcards, 1)
 
     def get_mapping_input_pe2(wildcards):
-        if config["sortmerna"]["sortmerna_active"]:
-            mapping_se_fastq2=outputfolder+"/sortmerna/{short}_R2_001_non-ribosomal_rna.fq.gz" # maybe this works
-        elif config["umi_tools"]["umi_tools_active"]:
-            mapping_se_fastq2=outputfolder + "/umi_extract/{short}_R2_001.fastq.gz"
-        elif config ["cutadapt"]["cutadapt_active"]:
-            mapping_se_fastq2=outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
-        else:
-            mapping_se_fastq2=outputfolder+"/untrimmed_fastq/{short}_R2_001.fastq.gz",
-        return mapping_se_fastq2
+        return _pe_mapping_input(wildcards, 2)
 
 
     rule cutadapt_pe:
@@ -169,40 +112,43 @@ if isSingleEnd() == False:
         shell:
             """
             mkdir -p {params.mapping_dir}
-            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.pe1} {input.pe2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log {log}
+            STAR {params.extra} --genomeDir {params.genDir} --runThreadN {resources.threads} --readFilesIn {input.pe1} {input.pe2} --readFilesCommand zcat --outFileNamePrefix {params.prefix} --outStd Log >> {log} 2>&1
             chmod ago+rwx -R {params.mapping_dir} >> {log} 2>&1
             rm -rf {params.work_dir} >> {log} 2>&1
             """
 
-    
-    rule umi_dedup_pe:
-        input:
-            outputfolder+"/star/{short}_pe_001_Aligned.sortedByCoord.out.bam"
-        params:
-            out=outputfolder,
-            sorted_bam=outputfolder+"/star/{short}_pe_001_sorted.Aligned.sortedByCoord.out.bam",
-            logfolder=outputfolder+"/logs/umi_tools/"
-        log:
-            outputfolder+"/logs/umi_tools/{short}_pe.umi_dedup.log"
-        conda:
-            p+"/envs/umi_tools.yaml"
-        message: "umi_tools dedup: removing duplicate reads from mapping output..."
 
-        resources:
-            threads=lambda wildcards, attempt: attempt * 12,
-            time_hrs=lambda wildcards, attempt: attempt * 4,
-            mem_gb=lambda wildcards, attempt: attempt * 8
+    if config["umi_tools"]["umi_tools_active"]:
+        # the single-end umi_dedup rule is not gated by isSingleEnd and would match the same output files
+        ruleorder: umi_dedup_pe > umi_dedup
 
-        output:
-            outputfolder+"/star/{short}_deduped.Aligned.sortedByCoord.out.bam"
-        shell:
-            """
-            mkdir -p {params.logfolder}
-            samtools sort --threads {resources.threads} {input} -o {params.sorted_bam} 2>{log}
-            samtools index {params.sorted_bam} 2>{log}
-            umi_tools dedup -I {params.sorted_bam} --output-stats={log} -S {output} 2>{log}
-            #chmod ago+rwx {params.out} 2>{log}
-            """
+        rule umi_dedup_pe:
+            input:
+                outputfolder+"/star/{short}_pe_001_Aligned.sortedByCoord.out.bam"
+            params:
+                sorted_bam=outputfolder+"/star/{short}_pe_001_sorted.Aligned.sortedByCoord.out.bam",
+                logfolder=outputfolder+"/logs/umi_tools/",
+                output_stats=outputfolder+"/logs/umi_tools/{short}_pe_dedup_stats.out"
+            log:
+                outputfolder+"/logs/umi_tools/{short}_pe.umi_dedup.log"
+            conda:
+                p+"/envs/umi_tools.yaml"
+            message: "umi_tools dedup (paired): removing duplicate read pairs from mapping output..."
+            resources:
+                threads=lambda wildcards, attempt: attempt * 12,
+                time_hrs=lambda wildcards, attempt: attempt * 4,
+                mem_gb=lambda wildcards, attempt: attempt * 8
+            output:
+                outputfolder+"/star/{short}_pe_001_deduped.Aligned.sortedByCoord.out.bam"
+            shell:
+                """
+                rm -f {output}
+                mkdir -p {params.logfolder}
+                samtools sort --threads {resources.threads} {input} -o {params.sorted_bam} 2>{log}
+                samtools index {params.sorted_bam} 2>>{log}
+                umi_tools dedup -I {params.sorted_bam} --paired --output-stats={params.output_stats} -S {output} --log={log}.dedup 2>>{log}
+                """
+
 
     rule FastQC_pe:
         input:  # need to test this if this works, also the input fun of kraken rule 
@@ -233,29 +179,9 @@ if isSingleEnd() == False:
             """
             mkdir -p {params.out}/fastqc/ >> {log} 2>&1
             fastqc -q --threads {resources.threads} {input} -o {params.out}/fastqc/ >> {log} 2>&1
-            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
+            fastp -i {input[0]} -I {input[1]} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
             chmod ago+rwx -R {params.out}/fastqc/ >> {log} 2>&1
             """
-
-
-    if not config["umi_tools"]["umi_tools_active"]:# since if umis are used, we need to use featurecounts
-        rule count_matrix_pe:
-            input:
-                expand(outputfolder+"/star/{file}/ReadsPerGene.out.tab", file=getSample_names_post_mapping())
-            output:
-                outputfolder+"/counts/all.tsv"
-            resources:
-                threads=lambda wildcards, attempt: attempt * 1,
-                time_hrs=lambda wildcards, attempt: attempt * 1,
-                mem_gb=lambda wildcards, attempt: attempt * 4
-            params:
-                samples=getSample_names_post_mapping(),
-                strand="True"
-            conda:
-                p+"/envs/pandas.yaml"
-            script:
-                "../scripts/count-matrix.py"
-
 
 
     rule FastQC_untrimmed_pe:
@@ -292,7 +218,7 @@ if isSingleEnd() == False:
             unset command_not_found_handle
             fastqc -q --threads {resources.threads} {input.r1} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
             fastqc -q --threads {resources.threads} {input.r2} -o {params.out}/fastqc_untrimmed/ >> {log} 2>&1
-            fastp -i {input} -h {params.fastp_report} -j {params.fastp_json}>> {log} 2>&1
+            fastp -i {input.r1} -I {input.r2} -h {params.fastp_report} -j {params.fastp_json} >> {log} 2>&1
             mv {params.zip1} {output.r1_z}
             mv {params.html1} {output.r1_h}
             mv {params.zip2} {output.r2_z}
@@ -302,8 +228,8 @@ if isSingleEnd() == False:
 
     rule crypt4gh_pe:
         input:
-            pe1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
-            pe2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
+            pe1=outputfolder + "/umi_extract/{short}_R1_001.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            pe2=outputfolder + "/umi_extract/{short}_R2_001.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         params:
             priv_key=config["crypt4gh"]["crypt4gh_own_private_key"],
             pub_key=config["crypt4gh"]["crypt4gh_client_public_key_dir"],# here the collaborators an our many public keys, all that can decrypt later
@@ -328,58 +254,15 @@ if isSingleEnd() == False:
             mkdir -p {params.c4gh_folder}
             mkdir -p {params.c4gh_logfolder}
             crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.pe1} > {output.c4gh_out1} 2>{log}
-            crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.pe2} > {output.c4gh_out2} 2>{log}
+            crypt4gh encrypt --sk {params.priv_key} `bash scripts/get_c4gh_string.sh {params.pub_key}` < {input.pe2} > {output.c4gh_out2} 2>>{log}
             sha256sum {output} >>{params.checksum_file}
             """
 
 
-#rule diamond_pe:
-#  input:
-#      in_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
-#      in_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
-#
-#  output:
-#      log_file1=outputfolder+"/diamond/{short}_R1_001/diamond.log",
-#      log_file2=outputfolder+"/diamond/{short}_R2_001/diamond.log"
-#
-#  params:
-#      out_folder=outputfolder+"/diamond/",
-#      out_sample_folder1=outputfolder+"/diamond/{short}_R1_001/", # run diamond here
-#      out_sample_folder2=outputfolder+"/diamond/{short}_R2_001/", # run diamond here
-#
-#      diamond_ref_file=config["diamond"]["diamond_ref_file"],
-#      textfile1=outputfolder+"/diamond/{short}_R1_001/{short}_r1_diamond_output.txt",
-#      textfile2=outputfolder+"/diamond/{short}_R2_001/{short}_r2_diamond_output.txt",
-#      diamond_summary_file1=outputfolder+"/diamond/{short}_R1_001/{short}_diamond_output_summary.txt",
-#      diamond_summary_file2=outputfolder+"/diamond/{short}_R2_001/{short}_diamond_output_summary.txt"
-#
-#  log:
-#      outputfolder+"/diamond/{short}.diamond.log"
-#  conda:
-#      p+"/envs/diamond.yaml"
-#  message: "diamond: classifying Sequence data with peptide similarity..."
-#  resources:
-#      threads=lambda wildcards, attempt: attempt * 12,
-#      time_hrs=lambda wildcards, attempt: attempt * 2,
-#      mem_gb=lambda wildcards, attempt: attempt * 24
-#
-#  shell:
-#      """
-#      mkdir -p {params.out_folder} 
-#      mkdir -p {params.out_sample_folder1} && mkdir -p {params.out_sample_folder2} 2>{log}
-#      cd {params.out_sample_folder1} 2>{log}
-#      diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile1} --query {input.in_1} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {output.log_file1} 2>&1
-#      cd {params.out_sample_folder2} 2>{log}
-#      diamond blastx --threads {resources.threads} --db {params.diamond_ref_file} --out {params.textfile2} --query {input.in_2} --outfmt 6 sscinames staxids sskingdoms skingdoms sphylums --taxon-k 1 --max-target-seqs 1 --log >> {output.log_file2} 2>&1
-#      cat {params.textfile1} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file1}
-#      cat {params.textfile2} |sort |uniq -c | sort -n | tac >>{params.diamond_summary_file2}
-#
-#      """
-
     rule sortmerna_pe:
         input:
-            sort_1=outputfolder + "/umi_extract/{short}_R1.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
-            sort_2=outputfolder + "/umi_extract/{short}_R2.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
+            sort_1=outputfolder + "/umi_extract/{short}_R1_001.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
+            sort_2=outputfolder + "/umi_extract/{short}_R2_001.umis-extracted.fastq.gz" if config["umi_tools"]["umi_tools_active"] else outputfolder+"/trimmed/{short}_R2_001_trimmed.fastq.gz"
         params:
             ref_string=lambda wc:config["sortmerna"]["sortmerna_reference_list"],
             fq_rrna_string=outputfolder+"/sortmerna/{short}_ribosomal_rna",
@@ -424,6 +307,9 @@ if isSingleEnd() == False:
 
 
     if config["umi_tools"]["umi_tools_active"]:# umi can be used without cutadapt, but thats not the default
+        # the single-end umi_extract rule is not gated by isSingleEnd and would match the same output files
+        ruleorder: umi_extract_pe > umi_extract
+
         rule umi_extract_pe:
             input:
                 in_1=outputfolder+"/untrimmed_fastq/{short}_R1_001.fastq.gz" if not config["cutadapt"]["cutadapt_active"] else outputfolder+"/trimmed/{short}_R1_001_trimmed.fastq.gz",
@@ -448,4 +334,4 @@ if isSingleEnd() == False:
                 umi_tools extract --stdin={input.in_1} --extract-method=regex --bc-pattern={params.umi_ptrn} --log={log} --stdout={output.out1} --read2-in={input.in_2} --read2-out={output.out2} --bc-pattern2={params.ptrn_2} >> {log} 2>&1
                 chmod ago+rwx -R {params.outputf}
                 sha256sum {output} >>{params.checksum_file}
-                """ 
+                """

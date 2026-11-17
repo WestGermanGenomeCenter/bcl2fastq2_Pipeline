@@ -1,6 +1,8 @@
 from snakemake.utils import min_version
 from snakemake.exceptions import WorkflowError
 import os
+import sys
+import time
 import pandas as pd
 
 min_version("8.28.0") # use-envmodules are not working in versions of 5.10.0 and below for clusters
@@ -13,6 +15,34 @@ outputfolder = config["demux"]["OutputFolder"]
 SKIP_DEMUX = config["skip_demux"]["skip_demux_active"]
 # idemux works on top of bclconvert output OR on externally demultiplexed fastqs (skip_demux)
 USE_IDEMUX = config["demux"].get("use_idemux", False)
+
+PIPELINE_START = time.time()
+
+
+def show_logs(files, title, n=40):
+    """Print the tail of each non-empty log file that was written during this run (skips stale logs of earlier runs)."""
+    for f in files:
+        try:
+            if os.path.getsize(f) == 0 or os.path.getmtime(f) < PIPELINE_START - 60:
+                continue
+            with open(f, errors="replace") as fh:
+                tail = "".join(fh.readlines()[-n:])
+        except OSError:
+            continue
+        print(f"\n===== {title}: {f} (last {n} lines) =====\n{tail}", file=sys.stderr)
+
+
+def bclconvert_error_logs():
+    # Logs/ is where bcl convert writes while running (it stays there if the run fails)
+    return [outputfolder + "/logs/SampleSheet_check.log",   # samplesheet validation (check_inputs)
+            outputfolder + "/Logs/Errors.log",
+            outputfolder + "/Logs/Warnings.log",
+            outputfolder + "/logs/e_bcl.log"]               # stdout/stderr of the bcl convert run (demux)
+
+
+def bclconvert_warning_logs():
+    # after a successful run organize_fastqs has moved Logs/ here
+    return [outputfolder + "/logs/bcl_convert_logs/Warnings.log"]
 
 
 def validate_idemux_sheet(path):
@@ -145,6 +175,8 @@ if not SKIP_DEMUX:
             script_for_checking= p+"/scripts/bclconvert_samplesheet_check.py",
             script_out=config["demux"]["OutputFolder"]+"/SampleSheet_check_script.out",
             samshee_out=config["demux"]["OutputFolder"]+"/SampleSheet_check_samshee.out",
+        log:
+            config["demux"]["OutputFolder"]+"/logs/SampleSheet_check.log"
         output:
             samplesheet_errors = config["demux"]["OutputFolder"]+"/SampleSheet_check.out"
         message:
@@ -158,7 +190,8 @@ if not SKIP_DEMUX:
         shell:
             """
             mkdir -p {params.output_dir}
-            {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} --output-directory {params.output_dir} --bcl-validate-sample-sheet-only true  --force >>{output} 2>&1
+            {params.bcl_convert_path} --bcl-input-directory {params.infolder} --sample-sheet {input.samplesheet} --output-directory {params.output_dir} --bcl-validate-sample-sheet-only true --force > {log} 2>&1
+            cat {log} >> {output}
             cat {params.Logs_path}/*.log >>{output} 
             rm -rf {params.output_dir}/Reports {params.output_dir}/Logs # just empty?
             python {params.script_for_checking} {input.samplesheet} >>{params.script_out} 2>/dev/null # should not be the reason for this rule to fail
@@ -520,9 +553,13 @@ rule interop_plots:
 
 onsuccess:
     print("Workflow finished without errors")
+    if not SKIP_DEMUX:
+        show_logs(bclconvert_warning_logs(), "bcl convert warnings")
 
 onerror:
     print("An error occurred during runtime")
+    if not SKIP_DEMUX:
+        show_logs(bclconvert_error_logs(), "bcl convert")
 
 onstart:
     print("Setting up and running pipeline")
